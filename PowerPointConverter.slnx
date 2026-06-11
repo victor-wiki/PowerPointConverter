@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="PowerPointConverter/PowerPointConverter.csproj" />
+  <Project Path="PowerPointViewer/PowerPointViewer.csproj" Id="f4d99020-e7f2-4615-9fc4-2832cff4d7bd" />
+</Solution>
