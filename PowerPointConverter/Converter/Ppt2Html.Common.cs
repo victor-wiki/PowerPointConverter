@@ -216,6 +216,10 @@ namespace PowerPointConverter.Converter
                                     return ls;
                                 }
                             }
+                            else if (size == null && size2 == null && x != null && x == x2 && y != null && y == y2)
+                            {
+                                return ls;
+                            }
                         }
                     }
                 }
@@ -270,7 +274,6 @@ namespace PowerPointConverter.Converter
 
             string backgroundColor = shape.Fill?.Color;
 
-
             P.ShapeProperties shapeProperties = null;
 
             if (ps != null)
@@ -289,6 +292,7 @@ namespace PowerPointConverter.Converter
 
             var transform = shapeProperties?.Transform2D;
             var gradientFill = shapeProperties?.GetFirstChild<A.GradientFill>();
+            var patternFill = shapeProperties?.GetFirstChild<A.PatternFill>();
 
             var flipH = transform?.HorizontalFlip?.Value;
             var flipV = transform?.VerticalFlip?.Value;
@@ -318,7 +322,7 @@ namespace PowerPointConverter.Converter
 
             if (geom != null)
             {
-                if (backgroundColor == null && !noFill)
+                if (backgroundColor == null && !noFill && gradientFill == null && patternFill == null)
                 {
                     var style = shape.SdkOpenXmlElement.GetFirstChild<P.ShapeStyle>();
 
@@ -420,9 +424,27 @@ namespace PowerPointConverter.Converter
                     }
                 }
 
-                string strAngle = angle.HasValue ? $"{(angle+150)}deg" : "to right";
+                string strAngle = angle.HasValue ? $"{(angle + 150)}deg" : "to right";
 
                 styleBuilder.Add("background", $"linear-gradient({strAngle}, {string.Join(",", stops)})");
+            }
+            else if (patternFill != null)
+            {
+                string preset = patternFill.Preset;
+                var bgColor = patternFill.BackgroundColor;
+                var foreColor = patternFill.ForegroundColor;
+
+                ColorInfo bgColorInfo = this.GetColorInfo(bgColor);
+                ColorInfo foreColorInfo = this.GetColorInfo(foreColor);
+
+                if (preset == "lgGrid")
+                {
+                    string strBgColor = bgColorInfo?.Color ?? "transparent";
+                    string strForeColor = foreColorInfo?.Color ?? "transparent";
+
+                    ////to do:the second linear-gradient doesn't work.
+                    styleBuilder.Add($"background-image:linear-gradient(to right, {strForeColor} 1px, {strBgColor} 1px), linear-gradient(to bottom, {strForeColor} 1px, {strBgColor} 1px);background-size:10px 10px;");
+                }
             }
             else
             {
@@ -893,6 +915,22 @@ namespace PowerPointConverter.Converter
             return this.GetColorInfo(presetColor, systemColor, schemaColor, rgbColorModelHex, rgbColorModelPercentage);
         }
 
+        private ColorInfo GetColorInfo(A.ColorType color)
+        {
+            if (color == null)
+            {
+                return null;
+            }
+
+            var presetColor = color.PresetColor;
+            var systemColor = color.SystemColor;
+            var schemaColor = color.SchemeColor;
+            var rgbColorModelHex = color.RgbColorModelHex;
+            var rgbColorModelPercentage = color.RgbColorModelPercentage;
+
+            return this.GetColorInfo(presetColor, systemColor, schemaColor, rgbColorModelHex, rgbColorModelPercentage);
+        }
+
         private void SetFontStyle(StyleBuilder styleBuilder, string color, ITextPortionFont font, string[] excludeKeys = null)
         {
             decimal fontSize = font.Size;
@@ -931,7 +969,7 @@ namespace PowerPointConverter.Converter
                 }
             }
 
-            styleBuilder.Add("clip-path:polygon(0% 0%,0% 100%, 100% 100%)");         
+            styleBuilder.Add("clip-path:polygon(0% 0%,0% 100%, 100% 100%)");
             styleBuilder.Add("z-index:0");
         }
 
