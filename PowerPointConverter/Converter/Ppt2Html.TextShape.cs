@@ -229,7 +229,7 @@ namespace PowerPointConverter.Converter
                         }
                         #endregion
 
-                        #region Background
+                        #region Font Color
                         if (fill != null)
                         {
                             if (!itemStyleBuilder.Contains("color"))

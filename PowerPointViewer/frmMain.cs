@@ -159,7 +159,6 @@ namespace PowerPointViewer
                         await this.webView.EnsureCoreWebView2Async();
                         await this.webView.ExecuteScriptAsync(script);
                     });
-
                 }
                 catch (Exception ex)
                 {
@@ -209,6 +208,12 @@ namespace PowerPointViewer
         private void btnLast_Click(object sender, EventArgs e)
         {
             this.ShowHtml(this.slideCount - 1);
+        }
+
+        private void tsmiColorTransform_Click(object sender, EventArgs e)
+        {
+            frmColorTransform frm = new frmColorTransform();
+            frm.Show();
         }
     }
 }

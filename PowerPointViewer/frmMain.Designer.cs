@@ -31,6 +31,8 @@
             webView = new Microsoft.Web.WebView2.WinForms.WebView2();
             menuStrip1 = new MenuStrip();
             tsmiOpenFile = new ToolStripMenuItem();
+            toolsToolStripMenuItem = new ToolStripMenuItem();
+            tsmiColorTransform = new ToolStripMenuItem();
             openFileDialog1 = new OpenFileDialog();
             btnFirst = new Button();
             btnPrevious = new Button();
@@ -58,7 +60,7 @@
             // 
             // menuStrip1
             // 
-            menuStrip1.Items.AddRange(new ToolStripItem[] { tsmiOpenFile });
+            menuStrip1.Items.AddRange(new ToolStripItem[] { tsmiOpenFile, toolsToolStripMenuItem });
             menuStrip1.Location = new Point(0, 0);
             menuStrip1.Name = "menuStrip1";
             menuStrip1.Size = new Size(800, 25);
@@ -71,6 +73,20 @@
             tsmiOpenFile.Size = new Size(75, 21);
             tsmiOpenFile.Text = "Open File";
             tsmiOpenFile.Click += tsmiOpenFile_Click;
+            // 
+            // toolsToolStripMenuItem
+            // 
+            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { tsmiColorTransform });
+            toolsToolStripMenuItem.Name = "toolsToolStripMenuItem";
+            toolsToolStripMenuItem.Size = new Size(52, 21);
+            toolsToolStripMenuItem.Text = "Tools";
+            // 
+            // tsmiColorTransform
+            // 
+            tsmiColorTransform.Name = "tsmiColorTransform";
+            tsmiColorTransform.Size = new Size(180, 22);
+            tsmiColorTransform.Text = "Color Transform";
+            tsmiColorTransform.Click += tsmiColorTransform_Click;
             // 
             // openFileDialog1
             // 
@@ -200,5 +216,7 @@
         private Label lblTotal;
         private Label label2;
         private Label lblMessage;
+        private ToolStripMenuItem toolsToolStripMenuItem;
+        private ToolStripMenuItem tsmiColorTransform;
     }
 }

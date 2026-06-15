@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml.Office2010.Drawing;
 using DocumentFormat.OpenXml.Office2019.Drawing.SVG;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using DocumentFormat.OpenXml.Vml;
 using HtmlAgilityPack;
 using PowerPointConverter.Builder;
 using PowerPointConverter.Extension;
@@ -291,6 +292,7 @@ namespace PowerPointConverter.Converter
             }
 
             var transform = shapeProperties?.Transform2D;
+            var solidFill = shapeProperties?.GetFirstChild<A.SolidFill>();
             var gradientFill = shapeProperties?.GetFirstChild<A.GradientFill>();
             var patternFill = shapeProperties?.GetFirstChild<A.PatternFill>();
 
@@ -322,7 +324,7 @@ namespace PowerPointConverter.Converter
 
             if (geom != null)
             {
-                if (backgroundColor == null && !noFill && gradientFill == null && patternFill == null)
+                if (backgroundColor == null && !noFill && gradientFill == null && patternFill == null && solidFill == null)
                 {
                     var style = shape.SdkOpenXmlElement.GetFirstChild<P.ShapeStyle>();
 
@@ -387,8 +389,6 @@ namespace PowerPointConverter.Converter
                 }
                 else if (geomType == Geometry.RightTriangle)
                 {
-                    var solidFill = shapeProperties?.GetFirstChild<A.SolidFill>();
-
                     this.AddRightTriangleStyle(solidFill, styleBuilder);
                 }
             }
@@ -445,6 +445,10 @@ namespace PowerPointConverter.Converter
                     ////to do:the second linear-gradient doesn't work.
                     styleBuilder.Add($"background-image:linear-gradient(to right, {strForeColor} 1px, {strBgColor} 1px), linear-gradient(to bottom, {strForeColor} 1px, {strBgColor} 1px);background-size:10px 10px;");
                 }
+            }
+            else if (solidFill != null)
+            {
+                this.SetFillStyle(styleBuilder, solidFill.PresetColor, solidFill.SystemColor, solidFill.SchemeColor, solidFill.RgbColorModelHex, solidFill.RgbColorModelPercentage, true);
             }
             else
             {
