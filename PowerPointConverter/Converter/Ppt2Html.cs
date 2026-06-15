@@ -24,6 +24,7 @@ namespace PowerPointConverter.Converter
     public partial class Ppt2Html
     {
         private string filePath;
+        private Stream stream;
         private ConvertOption option;
         private ShapeCrawler.Presentation presentation;
 
@@ -37,16 +38,22 @@ namespace PowerPointConverter.Converter
             this.option = option;
         }
 
+        public Ppt2Html(Stream stream, ConvertOption option = null)
+        {
+            this.stream = stream;
+            this.option = option;
+        }
+
         public ConvertResult Convert()
         {
-            if (string.IsNullOrEmpty(this.filePath))
+            if (string.IsNullOrEmpty(this.filePath) && this.stream == null)
             {
-                throw new ArgumentNullException("filePath can't be empty!");
+                throw new ArgumentNullException("Please provide either a file path or a stream!");
             }
 
             ConvertResult result = new ConvertResult() { Infos = new List<HtmlConvertInfo>() };
 
-            using (this.presentation = new ShapeCrawler.Presentation(this.filePath))
+            using (this.presentation = this.stream != null ? new ShapeCrawler.Presentation(this.stream) : new ShapeCrawler.Presentation(this.filePath))
             {
                 decimal width = this.presentation.SlideWidth;
                 decimal height = this.presentation.SlideHeight;
