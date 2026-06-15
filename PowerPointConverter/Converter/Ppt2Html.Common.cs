@@ -141,7 +141,7 @@ namespace PowerPointConverter.Converter
                     index = placeHolderShape.Index;
                 }
 
-                if (x == null && y == null && type == null && size == null)
+                if (x == null && y == null && type == null && size == null && index == null)
                 {
                     return null;
                 }
@@ -442,8 +442,7 @@ namespace PowerPointConverter.Converter
                     string strBgColor = bgColorInfo?.Color ?? "transparent";
                     string strForeColor = foreColorInfo?.Color ?? "transparent";
 
-                    ////to do:the second linear-gradient doesn't work.
-                    styleBuilder.Add($"background-image:linear-gradient(to right, {strForeColor} 1px, {strBgColor} 1px), linear-gradient(to bottom, {strForeColor} 1px, {strBgColor} 1px);background-size:10px 10px;");
+                    styleBuilder.Add($"background-image: conic-gradient(from 90deg at 1px 1px, {strBgColor} 25%, {strForeColor} 0);background-size:10px 10px;");
                 }
             }
             else if (solidFill != null)

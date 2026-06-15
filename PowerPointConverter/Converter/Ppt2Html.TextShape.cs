@@ -283,8 +283,7 @@ namespace PowerPointConverter.Converter
                 A.BulletFont bulletFont = null;
                 A.BulletColor bulletColor = null;
                 A.BulletSizePercentage bulletSizePercentage = null;
-                A.AutoNumberedBullet autoNumber = null;
-                //A.SolidFill fontFill = null;
+                A.AutoNumberedBullet autoNumber = null;                
 
                 string bulletColorValue = null;
                 string bulletSizePercentageValue = null;
@@ -397,16 +396,7 @@ namespace PowerPointConverter.Converter
                 }
                 #endregion          
 
-                #region Font Style
-                //if (fontFill != null)
-                //{
-                //    ColorInfo colorInfo = this.GetColorInfo(fontFill);
-
-                //    if (colorInfo != null)
-                //    {
-                //        fontColor = colorInfo.Color;
-                //    }
-                //}
+                #region Font Style         
 
                 if (portion != null)
                 {
