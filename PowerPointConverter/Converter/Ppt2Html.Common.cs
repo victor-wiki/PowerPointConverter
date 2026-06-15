@@ -442,7 +442,7 @@ namespace PowerPointConverter.Converter
                     string strBgColor = bgColorInfo?.Color ?? "transparent";
                     string strForeColor = foreColorInfo?.Color ?? "transparent";
 
-                    styleBuilder.Add($"background-image: conic-gradient(from 90deg at 1px 1px, {strBgColor} 25%, {strForeColor} 0);background-size:10px 10px;");
+                    styleBuilder.Add($"background-image:conic-gradient(from 90deg at 1px 1px, {strBgColor} 25%, {strForeColor} 0);background-size:10px 10px;");
                 }
             }
             else if (solidFill != null)
