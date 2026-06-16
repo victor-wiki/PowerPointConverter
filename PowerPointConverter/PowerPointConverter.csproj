@@ -5,19 +5,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>victor-wiki.$(AssemblyName)</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>victor-wiki</Authors>
     <Description>Convert PowerPoint to HMTL.</Description>
     <RepositoryUrl>https://github.com/victor-wiki/PowerPointConverter</RepositoryUrl>
-    <PackageReleaseNotes>add a constructor which uses Stream parameter for Ppt2Html.</PackageReleaseNotes>
-    <AssemblyVersion>1.0.1</AssemblyVersion>
-    <FileVersion>1.0.1</FileVersion>
+    <PackageReleaseNotes>1. improve performance;
+2. add: log.</PackageReleaseNotes>
+    <AssemblyVersion>1.0.2</AssemblyVersion>
+    <FileVersion>1.0.2</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="victor-wiki.ShapeCrawler" Version="1.0.1" />
+    <PackageReference Include="victor-wiki.ShapeCrawler" Version="1.0.2" />
   </ItemGroup>
 
 </Project>

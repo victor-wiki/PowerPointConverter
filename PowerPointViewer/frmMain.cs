@@ -69,7 +69,13 @@ namespace PowerPointViewer
 
         private void Convert(string filePath)
         {
-            Ppt2Html converter = new Ppt2Html(filePath);
+            ConvertOption option = new ConvertOption()
+            {
+                ReduceImageQuality = this.chkUseLowQualityForImage.Checked,
+                EnableLog = this.chkEnableLog.Checked
+            };
+
+            Ppt2Html converter = new Ppt2Html(filePath, option);
 
             converter.OnSlideBeginConvert += this.Converter_OnSlideBeginConvert;
             converter.OnSlideEndConvert += this.Converter_OnSlideEndConvert;
@@ -77,25 +83,23 @@ namespace PowerPointViewer
 
             this.result = converter.Convert();
 
-            if (this.result.IsOK)
-            {
-                if (this.result.Infos != null && this.result.Infos.Count > 0)
-                {
-                    this.slideCount = this.result.Infos.Count;
-
-                    this.lblTotal.Text = this.slideCount.ToString();
-
-                    for (int i = 1; i <= this.slideCount; i++)
-                    {
-                        this.cboNumber.Items.Add(i.ToString());
-                    }
-
-                    this.cboNumber.SelectedIndex = 0;
-                }
-            }
-            else
+            if (this.result.IsOK == false)
             {
                 MessageBox.Show(this.result.Message);
+            }            
+
+            if (this.result.Infos != null && this.result.Infos.Count > 0)
+            {
+                this.slideCount = this.result.Infos.Count;
+
+                this.lblTotal.Text = this.slideCount.ToString();
+
+                for (int i = 1; i <= this.slideCount; i++)
+                {
+                    this.cboNumber.Items.Add(i.ToString());
+                }
+
+                this.cboNumber.SelectedIndex = 0;
             }
         }
 

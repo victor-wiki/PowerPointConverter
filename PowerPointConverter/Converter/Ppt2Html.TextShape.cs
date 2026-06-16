@@ -1,6 +1,5 @@
 ﻿using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Drawing;
-using DocumentFormat.OpenXml.Spreadsheet;
 using HtmlAgilityPack;
 using PowerPointConverter.Builder;
 using PowerPointConverter.Extension;
@@ -10,7 +9,6 @@ using ShapeCrawler;
 using ShapeCrawler.Slides;
 using System.Text;
 using A = DocumentFormat.OpenXml.Drawing;
-using D = System.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
 
 namespace PowerPointConverter.Converter
@@ -38,8 +36,12 @@ namespace PowerPointConverter.Converter
             bool isSlideNumber = shape.PlaceholderType == PlaceholderType.SlideNumber;
             Geometry? geometry = shape.GeometryType;
 
-            var masterTextStyle = this.presentation.GetSdkPresentationDocument().PresentationPart.SlideMasterParts.FirstOrDefault()?.SlideMaster?.TextStyles;
-            P.TextListStyleType masterListStyle = isTitle ? masterTextStyle?.TitleStyle : masterTextStyle?.BodyStyle;
+            if(this.masterTextStyle == null)
+            {
+                this.masterTextStyle = this.presentation.GetSdkPresentationDocument().PresentationPart.SlideMasterParts.FirstOrDefault()?.SlideMaster?.TextStyles;
+            }
+            
+            P.TextListStyleType masterListStyle = isTitle ? this.masterTextStyle?.TitleStyle : this.masterTextStyle?.BodyStyle;
             var layoutListStyle = layoutShape?.SdkOpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
             var slideListStyle = shape.SdkOpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
 
@@ -176,6 +178,7 @@ namespace PowerPointConverter.Converter
                 StringBuilder sbRunText = new StringBuilder();
 
                 #region Subitem
+
                 foreach (var child in children)
                 {
                     if (child is A.Run run)
@@ -394,7 +397,7 @@ namespace PowerPointConverter.Converter
 
                     dictParagraphItemInfo.Add(level, paragraphItemInfo);
                 }
-                #endregion          
+                #endregion
 
                 #region Font Style         
 
@@ -466,7 +469,6 @@ namespace PowerPointConverter.Converter
                 }
                 else
                 {
-
                 }
 
                 i++;

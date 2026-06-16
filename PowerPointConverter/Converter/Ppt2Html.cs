@@ -27,6 +27,11 @@ namespace PowerPointConverter.Converter
         private Stream stream;
         private ConvertOption option;
         private ShapeCrawler.Presentation presentation;
+        private bool reduceImageQuality = false;
+        private bool enableLog = false;       
+        A.Theme theme;
+        A.ColorScheme colorScheme;
+        TextStyles masterTextStyle = null;
 
         public event SlideBeginConvert OnSlideBeginConvert;
         public event SlideEndConvert OnSlideEndConvert;
@@ -50,6 +55,10 @@ namespace PowerPointConverter.Converter
             {
                 throw new ArgumentNullException("Please provide either a file path or a stream!");
             }
+
+            this.reduceImageQuality = this.option?.ReduceImageQuality ?? false;
+            this.enableLog = this.option?.EnableLog ?? false;
+            LogHelper.DefaultLogFolder = this.option?.DefaultLogFolder;
 
             ConvertResult result = new ConvertResult() { Infos = new List<HtmlConvertInfo>() };
 
@@ -75,10 +84,12 @@ namespace PowerPointConverter.Converter
                             }
                         }
 
+                        this.Log($"Start to convert slide {slideIndex + 1}...");
+
                         if (this.OnSlideBeginConvert != null)
                         {
                             this.OnSlideBeginConvert(slideIndex);
-                        }
+                        }             
 
                         HtmlDocument doc = new HtmlDocument();
 
@@ -90,19 +101,47 @@ namespace PowerPointConverter.Converter
 
                         doc.DocumentNode.AppendChild(containerNode);
 
+                        var slideLayout = slide.SlidePart.SlideLayoutPart.SlideLayout;
                         var layoutSlide = slide.LayoutSlide as LayoutSlide;
 
-                        var layoutBackgroundFill = layoutSlide?.Background?.SolidFill;
-                        string backgroundColor = slide.Fill.Color ?? layoutBackgroundFill?.Color;
+                        string backgroundColor = "transparent";                  
                         double alpha = slide.Fill.Alpha;
-                        var backgroundImage = slide.Fill.Picture;
+
+                        string slideBgColor = slide.Fill.Color;
+
+                        if (slideBgColor == null)
+                        {
+                            if (slideLayout != null)
+                            {
+                                A.SolidFill solidFill = slideLayout.CommonSlideData?.Background?.BackgroundProperties?.GetFirstChild<A.SolidFill>();
+
+                                if (solidFill != null)
+                                {
+                                    backgroundColor = this.GetColorInfo(solidFill)?.Color;
+
+                                    if (alpha == StyleHelper.DefaultAlpha)
+                                    {
+                                        alpha = ValueHelper.RoundValueByMultiplicationFactor1000(solidFill.GetFirstChild<A.Alpha>()?.Val ?? ValueHelper.MultiplicationFactor100000);
+                                    }
+                                }
+                            }
+
+
+                            backgroundColor = "";
+                        }
+                        else
+                        {
+                            backgroundColor = slideBgColor;
+                        }
+
+                        var backgroundImage = slide.Fill.Picture;                       
 
                         #region Layout Images
                         var imgParts = layoutSlide.SlideLayoutPart?.ImageParts;
 
                         if (imgParts != null && imgParts.Count() > 0)
                         {
-                            var slideLayout = layoutSlide.SlideLayoutPart.SlideLayout;
+                            this.Log("Start to process ImageParts...");
 
                             var commonSlideData = slideLayout.GetFirstChild<CommonSlideData>();
 
@@ -135,15 +174,16 @@ namespace PowerPointConverter.Converter
                                     }
                                 }
                             }
-                        }
-                        #endregion
 
-                        if (layoutBackgroundFill != null && alpha == StyleHelper.DefaultAlpha)
-                        {
-                            alpha = layoutBackgroundFill?.Alpha ?? StyleHelper.DefaultAlpha;
+                            this.Log("End to process ImageParts.");
                         }
+                        #endregion                                              
+
+                        this.Log("Start to set background style...");
 
                         this.SetBackgroudStyle(styleBuilder, new FillInfo() { ColorInfo = new ColorInfo() { Color = backgroundColor, LuminanceModulation = slide.Fill?.LuminanceModulation, LuminanceOffset = slide.Fill?.LuminanceOffset }, Alpha = alpha, ImageInfo = new ImageInfo() { Image = backgroundImage } });
+
+                        this.Log("End to set background style.");
 
                         containerNode.AddStyle(styleBuilder);
 
@@ -153,11 +193,19 @@ namespace PowerPointConverter.Converter
 
                         foreach (var shape in shapes)
                         {
-                            StyleBuilder shapeStyleBuilder = this.GetShapeBasicStyle(shape, slide);
+                            this.Log($"Start to process shape {shape.Name}...");
+
+                            if(shape.Name == "图片占位符 4")
+                            {
+
+                            }
+
+                            IShape layoutShape = this.GetLayoutShape(shape, slide);                           
+
+                            StyleBuilder shapeStyleBuilder = this.GetShapeBasicStyle(shape, layoutShape, slide);
 
                             P.Shape ps = shape.SdkOpenXmlElement as P.Shape;
 
-                            IShape layoutShape = this.GetLayoutShape(shape, slide);
                             P.Shape lps = null;
 
                             if (layoutShape != null)
@@ -208,6 +256,8 @@ namespace PowerPointConverter.Converter
 
                                 containerNode.AppendChild(node);
                             }
+
+                            this.Log($"End to process shape {shape.Name}.");
                         }
 
                         var layoutShapes = slide.LayoutSlide.Shapes;
@@ -216,7 +266,9 @@ namespace PowerPointConverter.Converter
 
                         foreach (var shape in unUsedLayoutShapes)
                         {
-                            StyleBuilder shapeStyleBuilder = this.GetShapeBasicStyle(shape, slide);
+                            this.Log($"Start to process unused layout shape {shape.Name}...");
+
+                            StyleBuilder shapeStyleBuilder = this.GetShapeBasicStyle(shape, null, slide);
 
                             if (shape is PictureShape)
                             {
@@ -245,6 +297,8 @@ namespace PowerPointConverter.Converter
 
                                 containerNode.AppendChild(node);
                             }
+
+                            this.Log($"End to process unused layout shape {shape.Name}.");
                         }
 
                         StringBuilder sbHtml = new StringBuilder();
@@ -261,11 +315,17 @@ namespace PowerPointConverter.Converter
                         {
                             this.OnSlideEndConvert(slideIndex, info);
                         }
+
+                        this.Log($"End to convert slide {slideIndex + 1}.");
+
+                        this.Log(Environment.NewLine);
                     }
                     catch (Exception ex)
                     {
                         info.IsOK = false;
                         info.Message = ex.Message;
+
+                        this.Log(ex.Message, LogType.Error);
 
                         result.Infos.Add(info);
 
@@ -299,7 +359,7 @@ namespace PowerPointConverter.Converter
 
             imgNode.SetName(shape.Name);
 
-            styleBuilder.AddBackgroundImageUrl(ValueHelper.GetBase64StringFromByteArray(pic.Image));
+            styleBuilder.AddBackgroundImageUrl(ValueHelper.GetBase64StringFromByteArray(pic.Image, this.reduceImageQuality));
             styleBuilder.AddBackgroudImageStyle();
 
             imgNode.AddStyle(styleBuilder);
@@ -407,7 +467,7 @@ namespace PowerPointConverter.Converter
                     node.InnerHtml = gts.TextBox?.Text;
 
                     parentNode.AppendChild(node);
-                }                
+                }
 
                 index++;
             }

@@ -9,7 +9,7 @@
         {
             get
             {
-                return string.Join(Environment.NewLine, this.Infos?.Select(item=> $"Slide{(item.Index)}:{item.Message}" ));
+                return string.Join(Environment.NewLine, this.Infos?.Where(item => item.IsOK == false).Select(item => $"Slide{(item.Index)}:{item.Message}"));
             }
         }
     }

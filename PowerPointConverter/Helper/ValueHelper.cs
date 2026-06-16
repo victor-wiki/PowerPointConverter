@@ -1,5 +1,8 @@
 ﻿using ImageMagick;
 using ShapeCrawler;
+using SkiaSharp;
+using System.IO.Compression;
+using System.Runtime.CompilerServices;
 
 namespace PowerPointConverter.Helper
 {
@@ -8,6 +11,7 @@ namespace PowerPointConverter.Helper
         public const double MultiplicationFactor100 = 100.0;
         public const double MultiplicationFactor1000 = 1000.0;
         public const double MultiplicationFactor100000 = 100000.0;
+        public const int ImageLimitByteArraySize = 100 * 1024;
 
         public static double RoundValue(double value, int roundNumber = 2)
         {
@@ -29,11 +33,11 @@ namespace PowerPointConverter.Helper
             return Math.Round(value / MultiplicationFactor1000, roundNumber);
         }
 
-        public static string GetBase64StringFromByteArray(IImage img)
+        public static string GetBase64StringFromByteArray(IImage img, bool reduceImageQuality = false)
         {
             if (img != null)
             {
-                byte[] bytes = img.AsByteArray();               
+                byte[] bytes = img.AsByteArray();
 
                 string name = img.Name;
 
@@ -41,29 +45,82 @@ namespace PowerPointConverter.Helper
 
                 if (extension == ".emf" || extension == ".wdp" || extension == ".tiff")
                 {
-                    using (var image = new MagickImage(bytes))
-                    {
-                        image.Format = MagickFormat.Jpg;
-
-                        return GetBase64StringFromByteArray(image.ToByteArray());
-                    }
+                    return ConvertImage(bytes, reduceImageQuality);
                 }
                 else
                 {
-                    return GetBase64StringFromByteArray(bytes);
+                    return GetBase64StringFromByteArray(bytes, reduceImageQuality);
                 }
             }
 
             return null;
         }
 
-        public static string GetBase64StringFromByteArray(byte[] bytes)
+        public static int GetImageCompressionPercent(int length)
+        {
+            if (ImageLimitByteArraySize > length)
+            {
+                return 100;
+            }
+            else
+            {
+                int percent = (int)(ImageLimitByteArraySize / (length * 1.0) * 100);
+
+                return percent;
+            }
+        }
+
+        public static string ConvertImage(byte[] bytes, bool reduceImageQuality)
+        {
+            try
+            {
+                var percent = GetImageCompressionPercent(bytes.Length);
+
+                if (percent < 100)
+                {
+                    using (SKImage image = SKImage.FromEncodedData(bytes))
+                    {
+                        if (image != null)
+                        {
+                            SKData data = image.Encode(SKEncodedImageFormat.Png, reduceImageQuality ? percent : 100);
+
+                            return GetBase64StringFromByteArray(data.ToArray(), false);
+                        }
+                        else
+                        {
+                            using (var image2 = new MagickImage(bytes))
+                            {
+                                image2.Format = MagickFormat.Png;
+                                image2.Quality = reduceImageQuality ? (uint)percent : 100;
+
+                                return GetBase64StringFromByteArray(image2.ToByteArray());
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                
+            }
+
+            return GetBase64StringFromByteArray(bytes, false);
+        }
+
+        public static string GetBase64StringFromByteArray(byte[] bytes, bool reduceImageQuality = false)
         {
             if (bytes != null)
             {
-                string str = Convert.ToBase64String(bytes);
+                if (reduceImageQuality)
+                {
+                    return ConvertImage(bytes, true);
+                }
+                else
+                {
+                    string str = Convert.ToBase64String(bytes);
 
-                return $"data:image/png;base64,{str}";
+                    return $"data:image/png;base64,{str}";
+                }
             }
 
             return null;

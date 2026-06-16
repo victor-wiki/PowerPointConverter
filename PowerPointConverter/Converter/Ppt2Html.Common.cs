@@ -31,7 +31,8 @@ namespace PowerPointConverter.Converter
                 return null;
             }
 
-            var presentationPart = this.presentation.GetSdkPresentationDocument().PresentationPart;
+            var presentationPart = this.presentation.PresDocument.PresentationPart;
+
             var colorMap = presentationPart?.HandoutMasterPart?.HandoutMaster?.ColorMap;
 
             if (colorMap != null)
@@ -54,15 +55,21 @@ namespace PowerPointConverter.Converter
                 }
             }
 
-            var theme = presentationPart?.ThemePart?.Theme;
-
-            if (theme != null)
+            if(this.theme == null)
             {
-                var colorScheme = theme.ThemeElements?.GetFirstChild<A.ColorScheme>();
+                this.theme = presentationPart?.ThemePart?.Theme;
+            }           
 
-                if (colorScheme != null)
+            if (this.theme != null)
+            {
+                if(this.colorScheme == null)
                 {
-                    foreach (var child in colorScheme.ChildElements)
+                    this.colorScheme = this.theme.ThemeElements?.GetFirstChild<A.ColorScheme>();
+                }               
+
+                if (this.colorScheme != null)
+                {
+                    foreach (var child in this.colorScheme.ChildElements)
                     {
                         var colorName = child.LocalName;
 
@@ -82,6 +89,8 @@ namespace PowerPointConverter.Converter
                             }
                         }
                     }
+
+                    this.Log("****4");
                 }
             }
 
@@ -229,7 +238,7 @@ namespace PowerPointConverter.Converter
             return null;
         }
 
-        private StyleBuilder GetShapeBasicStyle(IShape shape, IUserSlide slide)
+        private StyleBuilder GetShapeBasicStyle(IShape shape, IShape layoutShape, IUserSlide slide)
         {
             StyleBuilder styleBuilder = new StyleBuilder();
 
@@ -255,8 +264,6 @@ namespace PowerPointConverter.Converter
 
             if ((width == 0 && height == 0) || needUsePlaceHolder)
             {
-                var layoutShape = this.GetLayoutShape(shape, slide);
-
                 if (layoutShape != null)
                 {
                     width = layoutShape.Width;
@@ -314,8 +321,6 @@ namespace PowerPointConverter.Converter
 
             if (geom == null)
             {
-                var layoutShape = this.GetLayoutShape(shape, slide);
-
                 if (layoutShape != null)
                 {
                     geom = (layoutShape.SdkOpenXmlElement as P.Shape)?.ShapeProperties.GetFirstChild<A.PresetGeometry>();
@@ -771,7 +776,7 @@ namespace PowerPointConverter.Converter
 
                 if (img != null)
                 {
-                    base64String = ValueHelper.GetBase64StringFromByteArray(img);
+                    base64String = ValueHelper.GetBase64StringFromByteArray(img, this.reduceImageQuality);
                 }
                 else
                 {
@@ -783,7 +788,7 @@ namespace PowerPointConverter.Converter
                         bytes = ms.ToArray();
                     }
 
-                    base64String = ValueHelper.GetBase64StringFromByteArray(bytes);
+                    base64String = ValueHelper.GetBase64StringFromByteArray(bytes, this.reduceImageQuality);
                 }
 
                 styleBuilder.AddBackgroundImageUrl(base64String);
@@ -873,10 +878,13 @@ namespace PowerPointConverter.Converter
                         colorInfo.LuminanceModulation = luminanceModulationValue;
                         colorInfo.LuminanceOffset = luminanceOffsetValue;
 
+                        this.Log("get color 5");
+
                         string transformedColor = ColorHelper.TransformColor(color.Value.ToHex(),
                             ValueHelper.RoundValue(luminanceModulationValue / ValueHelper.MultiplicationFactor100000),
                             ValueHelper.RoundValue(luminanceOffsetValue / ValueHelper.MultiplicationFactor100000));
 
+                        this.Log("get color 6");
                         if (transformedColor != null)
                         {
                             colorInfo.Color = transformedColor;
@@ -890,6 +898,8 @@ namespace PowerPointConverter.Converter
                             var alphaValue = alpha?.Val ?? 1;
 
                             colorInfo.Alpha = alphaValue;
+
+                            this.Log("get color 7");
 
                             colorInfo.Color = ColorHelper.GetRgbStyle(colorInfo.Color, ValueHelper.RoundValue(alphaValue / ValueHelper.MultiplicationFactor100000));
                         }
@@ -915,7 +925,9 @@ namespace PowerPointConverter.Converter
             var rgbColorModelHex = element.GetFirstChild<A.RgbColorModelHex>();
             var rgbColorModelPercentage = element.GetFirstChild<A.RgbColorModelPercentage>();
 
-            return this.GetColorInfo(presetColor, systemColor, schemaColor, rgbColorModelHex, rgbColorModelPercentage);
+            var colorInfo = this.GetColorInfo(presetColor, systemColor, schemaColor, rgbColorModelHex, rgbColorModelPercentage);
+
+            return colorInfo;
         }
 
         private ColorInfo GetColorInfo(A.ColorType color)
@@ -984,6 +996,23 @@ namespace PowerPointConverter.Converter
         private decimal RoundValueByEmusPoints(long value)
         {
             return ValueHelper.RoundValue(new Emus(value).AsPoints());
+        }
+
+        private void Log(string message, LogType logType = LogType.Info)
+        {
+            if (this.enableLog == false)
+            {
+                return;
+            }
+
+            if (logType == LogType.Info)
+            {
+                LogHelper.LogInfo(message);
+            }
+            else if (logType == LogType.Error)
+            {
+                LogHelper.LogError(message);
+            }
         }
     }
 }

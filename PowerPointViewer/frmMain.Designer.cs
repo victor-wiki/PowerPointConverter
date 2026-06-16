@@ -42,6 +42,8 @@
             label1 = new Label();
             lblTotal = new Label();
             lblMessage = new Label();
+            chkEnableLog = new CheckBox();
+            chkUseLowQualityForImage = new CheckBox();
             ((System.ComponentModel.ISupportInitialize)webView).BeginInit();
             menuStrip1.SuspendLayout();
             SuspendLayout();
@@ -84,7 +86,7 @@
             // tsmiColorTransform
             // 
             tsmiColorTransform.Name = "tsmiColorTransform";
-            tsmiColorTransform.Size = new Size(180, 22);
+            tsmiColorTransform.Size = new Size(172, 22);
             tsmiColorTransform.Text = "Color Transform";
             tsmiColorTransform.Click += tsmiColorTransform_Click;
             // 
@@ -173,11 +175,37 @@
             lblMessage.Size = new Size(0, 17);
             lblMessage.TabIndex = 9;
             // 
+            // chkEnableLog
+            // 
+            chkEnableLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            chkEnableLog.AutoSize = true;
+            chkEnableLog.Checked = true;
+            chkEnableLog.CheckState = CheckState.Checked;
+            chkEnableLog.Location = new Point(507, 32);
+            chkEnableLog.Name = "chkEnableLog";
+            chkEnableLog.Size = new Size(89, 21);
+            chkEnableLog.TabIndex = 10;
+            chkEnableLog.Text = "Enable log";
+            chkEnableLog.UseVisualStyleBackColor = true;
+            // 
+            // chkUseLowQualityForImage
+            // 
+            chkUseLowQualityForImage.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            chkUseLowQualityForImage.AutoSize = true;
+            chkUseLowQualityForImage.Location = new Point(635, 33);
+            chkUseLowQualityForImage.Name = "chkUseLowQualityForImage";
+            chkUseLowQualityForImage.Size = new Size(153, 21);
+            chkUseLowQualityForImage.TabIndex = 11;
+            chkUseLowQualityForImage.Text = "Low quality for image";
+            chkUseLowQualityForImage.UseVisualStyleBackColor = true;
+            // 
             // frmMain
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
+            Controls.Add(chkUseLowQualityForImage);
+            Controls.Add(chkEnableLog);
             Controls.Add(lblMessage);
             Controls.Add(lblTotal);
             Controls.Add(label1);
@@ -218,5 +246,7 @@
         private Label lblMessage;
         private ToolStripMenuItem toolsToolStripMenuItem;
         private ToolStripMenuItem tsmiColorTransform;
+        private CheckBox chkEnableLog;
+        private CheckBox chkUseLowQualityForImage;
     }
 }
