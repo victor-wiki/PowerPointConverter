@@ -89,8 +89,6 @@ namespace PowerPointConverter.Converter
                             }
                         }
                     }
-
-                    this.Log("****4");
                 }
             }
 
@@ -878,13 +876,10 @@ namespace PowerPointConverter.Converter
                         colorInfo.LuminanceModulation = luminanceModulationValue;
                         colorInfo.LuminanceOffset = luminanceOffsetValue;
 
-                        this.Log("get color 5");
-
                         string transformedColor = ColorHelper.TransformColor(color.Value.ToHex(),
                             ValueHelper.RoundValue(luminanceModulationValue / ValueHelper.MultiplicationFactor100000),
                             ValueHelper.RoundValue(luminanceOffsetValue / ValueHelper.MultiplicationFactor100000));
 
-                        this.Log("get color 6");
                         if (transformedColor != null)
                         {
                             colorInfo.Color = transformedColor;
@@ -898,8 +893,6 @@ namespace PowerPointConverter.Converter
                             var alphaValue = alpha?.Val ?? 1;
 
                             colorInfo.Alpha = alphaValue;
-
-                            this.Log("get color 7");
 
                             colorInfo.Color = ColorHelper.GetRgbStyle(colorInfo.Color, ValueHelper.RoundValue(alphaValue / ValueHelper.MultiplicationFactor100000));
                         }

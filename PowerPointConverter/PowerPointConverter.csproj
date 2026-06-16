@@ -5,14 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>victor-wiki.$(AssemblyName)</PackageId>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Authors>victor-wiki</Authors>
     <Description>Convert PowerPoint to HMTL.</Description>
     <RepositoryUrl>https://github.com/victor-wiki/PowerPointConverter</RepositoryUrl>
     <PackageReleaseNotes>1. improve performance;
 2. add: log.</PackageReleaseNotes>
-    <AssemblyVersion>1.0.2</AssemblyVersion>
-    <FileVersion>1.0.2</FileVersion>
+    <AssemblyVersion>1.0.3</AssemblyVersion>
+    <FileVersion>1.0.3</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
