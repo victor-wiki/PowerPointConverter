@@ -1,1 +1,1 @@
-It uses [ShapeCrawler](https://github.com/ShapeCrawler/ShapeCrawler) and [OpenXML](https://github.com/dotnet/Open-XML-SDK) to parse pptx file and use [HtmlAgilityPack](https://github.com/zzzprojects/html-agility-pack/) to render.
+It uses [ShapeCrawler](https://github.com/ShapeCrawler/ShapeCrawler) and [OpenXML](https://github.com/dotnet/Open-XML-SDK) to parse pptx file and use [HtmlAgilityPack](https://github.com/zzzprojects/html-agility-pack/) to create html elements.
