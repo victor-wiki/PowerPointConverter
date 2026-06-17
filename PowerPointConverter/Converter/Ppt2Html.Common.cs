@@ -55,17 +55,17 @@ namespace PowerPointConverter.Converter
                 }
             }
 
-            if(this.theme == null)
+            if (this.theme == null)
             {
                 this.theme = presentationPart?.ThemePart?.Theme;
-            }           
+            }
 
             if (this.theme != null)
             {
-                if(this.colorScheme == null)
+                if (this.colorScheme == null)
                 {
                     this.colorScheme = this.theme.ThemeElements?.GetFirstChild<A.ColorScheme>();
-                }               
+                }
 
                 if (this.colorScheme != null)
                 {
@@ -725,7 +725,11 @@ namespace PowerPointConverter.Converter
             double? luminanceModulation = colorInfo?.LuminanceModulation;
             double? luminanceOffset = colorInfo?.LuminanceOffset;
 
-            if (!string.IsNullOrEmpty(color) && color != "transparent")
+            if (fillInfo?.IsColorTransformed == true && color != null)
+            {
+                styleBuilder.AddBackgroudColor(color);
+            }
+            else if (!string.IsNullOrEmpty(color) && color != "transparent")
             {
                 D.Color? bgColor = ColorHelper.GetColor(color);
 

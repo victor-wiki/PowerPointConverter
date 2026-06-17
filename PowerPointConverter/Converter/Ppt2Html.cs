@@ -106,6 +106,7 @@ namespace PowerPointConverter.Converter
 
                         string backgroundColor = "transparent";                  
                         double alpha = slide.Fill.Alpha;
+                        bool isColorTransformed = false;
 
                         string slideBgColor = slide.Fill.Color;
 
@@ -119,9 +120,9 @@ namespace PowerPointConverter.Converter
                                 {
                                     backgroundColor = this.GetColorInfo(solidFill)?.Color;
 
-                                    if (alpha == StyleHelper.DefaultAlpha)
+                                    if(backgroundColor!=null)
                                     {
-                                        alpha = ValueHelper.RoundValueByMultiplicationFactor1000(solidFill.GetFirstChild<A.Alpha>()?.Val ?? ValueHelper.MultiplicationFactor100000);
+                                        isColorTransformed = true;
                                     }
                                 }
                             }
@@ -178,7 +179,7 @@ namespace PowerPointConverter.Converter
 
                         this.Log("Start to set background style...");
 
-                        this.SetBackgroudStyle(styleBuilder, new FillInfo() { ColorInfo = new ColorInfo() { Color = backgroundColor, LuminanceModulation = slide.Fill?.LuminanceModulation, LuminanceOffset = slide.Fill?.LuminanceOffset }, Alpha = alpha, ImageInfo = new ImageInfo() { Image = backgroundImage } });
+                        this.SetBackgroudStyle(styleBuilder, new FillInfo() { IsColorTransformed=isColorTransformed, ColorInfo = new ColorInfo() { Color = backgroundColor, LuminanceModulation = slide.Fill?.LuminanceModulation, LuminanceOffset = slide.Fill?.LuminanceOffset }, Alpha = alpha, ImageInfo = new ImageInfo() { Image = backgroundImage } });
 
                         this.Log("End to set background style.");
 
