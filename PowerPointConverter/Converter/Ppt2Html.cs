@@ -190,12 +190,7 @@ namespace PowerPointConverter.Converter
 
                         foreach (var shape in shapes)
                         {
-                            this.Log($"Start to process shape {shape.Name}...");
-
-                            if(shape.Name == "图片占位符 4")
-                            {
-
-                            }
+                            this.Log($"Start to process shape {shape.Name}...");                          
 
                             IShape layoutShape = this.GetLayoutShape(shape, slide);                           
 
