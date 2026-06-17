@@ -125,9 +125,6 @@ namespace PowerPointConverter.Converter
                                     }
                                 }
                             }
-
-
-                            backgroundColor = "";
                         }
                         else
                         {
