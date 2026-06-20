@@ -5,20 +5,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>victor-wiki.$(AssemblyName)</PackageId>
-    <Version>1.0.3</Version>
+    <Version>1.0.4</Version>
     <Authors>victor-wiki</Authors>
     <Description>Convert PowerPoint to HMTL.</Description>
     <RepositoryUrl>https://github.com/victor-wiki/PowerPointConverter</RepositoryUrl>
-    <PackageReleaseNotes>1. improve performance;
-2. add: log.</PackageReleaseNotes>
-    <AssemblyVersion>1.0.3</AssemblyVersion>
-    <FileVersion>1.0.3</FileVersion>
+    <PackageReleaseNotes>1. add parse: image crop, custom geometry;
+2. issue fix: text shape margin and align, slide background.</PackageReleaseNotes>
+    <AssemblyVersion>1.0.4</AssemblyVersion>
+    <FileVersion>1.0.4</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="victor-wiki.ShapeCrawler" Version="1.0.2" />
+    <PackageReference Include="Svg.Skia" Version="5.1.1" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.9" />
+    <PackageReference Include="victor-wiki.ShapeCrawler" Version="1.0.4" />
   </ItemGroup>
 
 </Project>

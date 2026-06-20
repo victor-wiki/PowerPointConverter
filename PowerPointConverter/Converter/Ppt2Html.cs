@@ -1,5 +1,4 @@
-﻿using DocumentFormat.OpenXml.Drawing;
-using DocumentFormat.OpenXml.Presentation;
+﻿using DocumentFormat.OpenXml.Presentation;
 using HtmlAgilityPack;
 using PowerPointConverter.Builder;
 using PowerPointConverter.Extension;
@@ -9,11 +8,11 @@ using ShapeCrawler;
 using ShapeCrawler.Drawing;
 using ShapeCrawler.Shapes;
 using ShapeCrawler.Slides;
-using System.Drawing;
 using System.Globalization;
 using System.Text;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
+using S = ShapeCrawler.Shapes;
 
 namespace PowerPointConverter.Converter
 {
@@ -28,7 +27,7 @@ namespace PowerPointConverter.Converter
         private ConvertOption option;
         private ShapeCrawler.Presentation presentation;
         private bool reduceImageQuality = false;
-        private bool enableLog = false;       
+        private bool enableLog = false;
         A.Theme theme;
         A.ColorScheme colorScheme;
         TextStyles masterTextStyle = null;
@@ -62,7 +61,7 @@ namespace PowerPointConverter.Converter
 
             ConvertResult result = new ConvertResult() { Infos = new List<HtmlConvertInfo>() };
 
-            using (this.presentation = this.stream != null ? new ShapeCrawler.Presentation(this.stream) : new ShapeCrawler.Presentation(this.filePath))
+            using (this.presentation = this.stream != null ? new ShapeCrawler.Presentation(this.stream, false) : new ShapeCrawler.Presentation(this.filePath, false))
             {
                 decimal width = this.presentation.SlideWidth;
                 decimal height = this.presentation.SlideHeight;
@@ -71,7 +70,7 @@ namespace PowerPointConverter.Converter
 
                 foreach (DrawingSlide slide in this.presentation.Slides)
                 {
-                    HtmlConvertInfo info = new HtmlConvertInfo() { Index = slideIndex, Width = width, Height = height };
+                    HtmlConvertInfo info = new HtmlConvertInfo() { Index = slideIndex, Number = slide.Number, Width = width, Height = height };
 
                     try
                     {
@@ -89,7 +88,7 @@ namespace PowerPointConverter.Converter
                         if (this.OnSlideBeginConvert != null)
                         {
                             this.OnSlideBeginConvert(slideIndex);
-                        }             
+                        }
 
                         HtmlDocument doc = new HtmlDocument();
 
@@ -99,111 +98,101 @@ namespace PowerPointConverter.Converter
 
                         var containerNode = doc.CreateElement("div");
 
+                        styleBuilder.Add("left:0px;top:0px;position:absolute");
+
                         doc.DocumentNode.AppendChild(containerNode);
 
                         var slideLayout = slide.SlidePart.SlideLayoutPart.SlideLayout;
                         var layoutSlide = slide.LayoutSlide as LayoutSlide;
+                        var shapes = slide.Shapes;
 
-                        string backgroundColor = "transparent";                  
-                        double alpha = slide.Fill.Alpha;
-                        bool isColorTransformed = false;
+                        #region Background
+                        ShapeFill backgroundFill = slide.Fill as ShapeFill;
+                        var backgroudImageBytes = backgroundFill?.Picture?.AsByteArray();
 
-                        string slideBgColor = slide.Fill.Color;
+                        A.SolidFill solidFill = slide.SlidePart.Slide.CommonSlideData?.Background?.BackgroundProperties?.GetFirstChild<A.SolidFill>();
 
-                        if (slideBgColor == null)
+                        if (backgroundFill == null)
                         {
                             if (slideLayout != null)
                             {
-                                A.SolidFill solidFill = slideLayout.CommonSlideData?.Background?.BackgroundProperties?.GetFirstChild<A.SolidFill>();
+                                solidFill = slideLayout.CommonSlideData?.Background?.BackgroundProperties?.GetFirstChild<A.SolidFill>();
 
-                                if (solidFill != null)
+                                if (backgroudImageBytes == null)
                                 {
-                                    backgroundColor = this.GetColorInfo(solidFill)?.Color;
+                                    backgroudImageBytes = layoutSlide.Background?.Picture()?.ToArray();
+                                }
+                            }
 
-                                    if(backgroundColor!=null)
+                            if (solidFill == null)
+                            {
+                                var slideMaster = (slide.LayoutSlide?.MasterSlide as MasterSlide)?.SlideMasterPart?.SlideMaster;
+
+                                if (slideMaster != null)
+                                {
+                                    solidFill = slideMaster.CommonSlideData?.Background?.BackgroundProperties?.GetFirstChild<A.SolidFill>();
+
+                                    if (backgroudImageBytes == null)
                                     {
-                                        isColorTransformed = true;
+                                        backgroudImageBytes = slide.LayoutSlide?.MasterSlide?.Background?.AsByteArray();
                                     }
                                 }
                             }
                         }
-                        else
+
+                        this.SetSlideBackgroudStyle(backgroundFill, solidFill, backgroudImageBytes, styleBuilder);
+                        #endregion
+
+                        #region Images
+                        var layoutImageParts = layoutSlide.SlideLayoutPart?.ImageParts;
+                        var slideImageParts = slide.SlidePart?.ImageParts;
+
+                        if (layoutImageParts != null && layoutImageParts.Count() > 0)
                         {
-                            backgroundColor = slideBgColor;
-                        }
-
-                        var backgroundImage = slide.Fill.Picture;                       
-
-                        #region Layout Images
-                        var imgParts = layoutSlide.SlideLayoutPart?.ImageParts;
-
-                        if (imgParts != null && imgParts.Count() > 0)
-                        {
-                            this.Log("Start to process ImageParts...");
+                            this.Log("Start to process slide layout ImageParts...");
 
                             var commonSlideData = slideLayout.GetFirstChild<CommonSlideData>();
 
-                            if (commonSlideData != null)
-                            {
-                                P.ShapeTree tree = commonSlideData.GetFirstChild<P.ShapeTree>();
+                            this.ProcessImageParts(commonSlideData, layoutImageParts, layoutSlide.SlideLayoutPart.Parts, doc, containerNode);
 
-                                if (tree != null)
-                                {
-                                    foreach (var child in tree.ChildElements)
-                                    {
-                                        if (child is P.Picture)
-                                        {
-                                            this.AddImage(doc, containerNode, child as P.Picture, imgParts, layoutSlide.SlideLayoutPart.Parts, 0);
-                                        }
-                                        else if (child is P.GroupShape)
-                                        {
-                                            int index = 0;
+                            this.Log("End to process slide layout ImageParts.");
+                        }
 
-                                            foreach (var gs in child.ChildElements)
-                                            {
-                                                if (gs is P.Picture)
-                                                {
-                                                    this.AddImage(doc, containerNode, gs as P.Picture, imgParts, layoutSlide.SlideLayoutPart.Parts, index);
-                                                }
+                        if (slideImageParts != null && slideImageParts.Count() > 0)
+                        {
+                            this.Log("Start to process slide ImageParts...");
 
-                                                index++;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            var commonSlideData = slide.SlidePart?.Slide?.GetFirstChild<CommonSlideData>();
 
-                            this.Log("End to process ImageParts.");
+                            this.ProcessImageParts(commonSlideData, slideImageParts, slide.SlidePart.Parts, doc, containerNode);
+
+                            this.Log("End to process slide ImageParts.");
                         }
                         #endregion                                              
 
                         this.Log("Start to set background style...");
 
-                        this.SetBackgroudStyle(styleBuilder, new FillInfo() { IsColorTransformed=isColorTransformed, ColorInfo = new ColorInfo() { Color = backgroundColor, LuminanceModulation = slide.Fill?.LuminanceModulation, LuminanceOffset = slide.Fill?.LuminanceOffset }, Alpha = alpha, ImageInfo = new ImageInfo() { Image = backgroundImage } });
-
                         this.Log("End to set background style.");
 
                         containerNode.AddStyle(styleBuilder);
-
-                        var shapes = slide.Shapes;
 
                         var usedLayoutShapeIds = new List<int>();
 
                         foreach (var shape in shapes)
                         {
-                            this.Log($"Start to process shape {shape.Name}...");                          
+                            this.Log($"Start to process shape {shape.Name}...");
 
-                            IShape layoutShape = this.GetLayoutShape(shape, slide);                           
+                            IShape layoutShape = this.GetLayoutShape(shape, slide);
 
                             StyleBuilder shapeStyleBuilder = this.GetShapeBasicStyle(shape, layoutShape, slide);
 
-                            P.Shape ps = shape.SdkOpenXmlElement as P.Shape;
+                            P.Shape ps = (shape as S.Shape).OpenXmlElement as P.Shape;
 
                             P.Shape lps = null;
 
                             if (layoutShape != null)
                             {
-                                lps = layoutShape.SdkOpenXmlElement as P.Shape;
+                                lps = (layoutShape as S.Shape).OpenXmlElement as P.Shape;
                                 usedLayoutShapeIds.Add(layoutShape.Id);
                             }
 
@@ -216,7 +205,7 @@ namespace PowerPointConverter.Converter
                             else if (shape is PictureShape)
                             {
                                 #region PictureShape
-                                this.AddPictureShape(shape as PictureShape, shapeStyleBuilder, doc, containerNode);
+                                this.AddPictureShape(shape as PictureShape, layoutShape, slide, shapeStyleBuilder, doc, containerNode);
                                 #endregion
                             }
                             else if (shape is ShapeCrawler.Slides.TableShape)
@@ -240,6 +229,10 @@ namespace PowerPointConverter.Converter
                             else if (shape is LineShape)
                             {
                                 this.AddLineShape(shape as LineShape, shapeStyleBuilder, doc, containerNode);
+                            }
+                            else if (shape is ShapeCrawler.MediaContent.MediaShape ms)
+                            {
+                                this.AddMediaShape(ms, slide, shapeStyleBuilder, doc, containerNode);
                             }
                             else
                             {
@@ -265,8 +258,8 @@ namespace PowerPointConverter.Converter
 
                             if (shape is PictureShape)
                             {
-                                this.AddPictureShape(shape as PictureShape, shapeStyleBuilder, doc, containerNode);
-                            }
+                                this.AddPictureShape(shape as PictureShape, null, slide, shapeStyleBuilder, doc, containerNode);
+                            }                            
                             else if (shape is LineShape)
                             {
                                 this.AddLineShape(shape as LineShape, shapeStyleBuilder, doc, containerNode);
@@ -335,29 +328,80 @@ namespace PowerPointConverter.Converter
             return result;
         }
 
-        private void AddPictureShape(PictureShape shape, StyleBuilder styleBuilder, HtmlDocument doc, HtmlNode parentNode)
+        private void AddPictureShape(PictureShape shape, IShape layoutShape, DrawingSlide slide, StyleBuilder styleBuilder, HtmlDocument doc, HtmlNode parentNode)
         {
             var pic = shape.Picture;
+            CroppingFrame crop = pic.Crop;
 
-            var alpha = (shape.SdkOpenXmlElement as P.Picture)?.BlipFill?.Blip?.GetFirstChild<A.AlphaModulationFixed>();
+            var picture = (shape as S.Shape).OpenXmlElement as P.Picture;
+            var nonVisualDrawingProperties = picture?.GetFirstChild<P.NonVisualPictureProperties>()?.GetFirstChild<P.ApplicationNonVisualDrawingProperties>();
+            var videoFile = nonVisualDrawingProperties?.GetFirstChild<A.VideoFromFile>();
+            var audioFile = nonVisualDrawingProperties?.GetFirstChild<A.AudioFromFile>();
 
-            if (alpha != null)
+            if (videoFile == null && audioFile == null)
             {
-                var alphaValue = ValueHelper.RoundValue(alpha.Amount / 100000.0);
+                var alpha = picture?.BlipFill?.Blip?.GetFirstChild<A.AlphaModulationFixed>();
 
-                styleBuilder.Add("filter", $"brightness({alphaValue})"); ////to do
+                if (alpha != null)
+                {
+                    var alphaValue = ValueHelper.RoundValueByMultiplicationFactor100000(alpha.Amount);
+
+                    styleBuilder.Add("filter", $"brightness({alphaValue})"); ////to do
+                }
+
+                var imgNode = doc.CreateElement("div");
+
+                imgNode.SetName(shape.Name);
+
+                string base64String = null;
+
+                if (crop == null)
+                {
+                    base64String = FileHelper.GetBase64StringFromImageByteArray(pic.Image, this.reduceImageQuality);
+                }
+                else
+                {
+                    double width = (double)shape.Width;
+                    double height = (double)shape.Height;
+
+                    if (width == 0 || height == 0)
+                    {
+                        if (layoutShape != null)
+                        {
+                            width = (double)layoutShape.Width;
+                            height = (double)layoutShape.Height;
+                        }
+                    }
+
+                    ImageInfo imageInfo = new ImageInfo()
+                    {
+                        Bytes = pic.Image.AsByteArray(),
+                        CropInfo = new CropInfo()
+                        {
+                            Left = ValueHelper.RoundValueByMultiplicationFactor100((double)crop.Left),
+                            Right = ValueHelper.RoundValueByMultiplicationFactor100((double)crop.Right),
+                            Top = ValueHelper.RoundValueByMultiplicationFactor100((double)crop.Top),
+                            Bottom = ValueHelper.RoundValueByMultiplicationFactor100((double)crop.Bottom)
+                        },
+                        DisplayWidth = width,
+                        DisplayHeight = height,
+                        NeedConvert = FileHelper.NeedConvertImage(pic.Image)
+                    };
+
+                    base64String = FileHelper.GetBase64StringFromImageInfo(imageInfo, this.reduceImageQuality);
+                }
+
+                styleBuilder.AddBackgroundImageUrl(base64String);
+                styleBuilder.AddBackgroudImageStyle();
+
+                imgNode.AddStyle(styleBuilder);
+
+                parentNode.AppendChild(imgNode);
             }
-
-            var imgNode = doc.CreateElement("div");
-
-            imgNode.SetName(shape.Name);
-
-            styleBuilder.AddBackgroundImageUrl(ValueHelper.GetBase64StringFromByteArray(pic.Image, this.reduceImageQuality));
-            styleBuilder.AddBackgroudImageStyle();
-
-            imgNode.AddStyle(styleBuilder);
-
-            parentNode.AppendChild(imgNode);
+            else
+            {
+                this.AddMediaFromPicture(shape, slide, picture, styleBuilder, doc, parentNode);
+            }
         }
 
         private void AddLineShape(LineShape shape, StyleBuilder styleBuilder, HtmlDocument doc, HtmlNode parentNode)
@@ -406,11 +450,12 @@ namespace PowerPointConverter.Converter
                     sb.Add($"transform:rotate({rotation}deg)");
                 }
 
+                var shapeProperties = ((gs as S.Shape).OpenXmlElement as P.Shape)?.ShapeProperties;
+                var solidFill = shapeProperties?.GetFirstChild<A.SolidFill>();
+
                 if (gs is ShapeCrawler.Shapes.GroupedTextShape gts)
                 {
                     HtmlNode node = doc.CreateElement("div");
-
-                    this.SetBackgroudStyle(sb, gts.Fill);
 
                     var w = gts.Width;
                     var h = gts.Height;
@@ -418,16 +463,25 @@ namespace PowerPointConverter.Converter
                     var top = gts.Y;
 
                     sb.AddAbsolutePosition(w, h, left, top);
+                    this.SetBackgroudStyle(sb, gts.Fill, (double)w, (double)h);
 
-                    if (gts.GeometryType == Geometry.Ellipse)
+                    Geometry? geomType = gts.GeometryType;
+
+                    if (geomType == Geometry.Ellipse)
                     {
                         sb.AddCircleStyle();
                     }
-                    else if (gts.GeometryType == Geometry.RightTriangle)
+                    else if (geomType == Geometry.RightTriangle)
                     {
-                        var fill = (gts.SdkOpenXmlElement as P.Shape)?.ShapeProperties?.GetFirstChild<A.SolidFill>();
+                        this.AddRightTriangleStyle(solidFill, sb);
+                    }
+                    else if(geomType == Geometry.Custom)
+                    {
+                        A.CustomGeometry customGeometry = shapeProperties?.GetFirstChild<A.CustomGeometry>();
 
-                        this.AddRightTriangleStyle(fill, sb);
+                        this.SetCustomGeometryStyle(customGeometry, sb, w, h, solidFill, null);
+
+                        sb.Remove("background-color");
                     }
                     else
                     {

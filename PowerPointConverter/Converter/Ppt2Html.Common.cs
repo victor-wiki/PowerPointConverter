@@ -1,10 +1,12 @@
 ﻿using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Drawing;
+using DocumentFormat.OpenXml.Drawing.Charts;
 using DocumentFormat.OpenXml.Office2010.Drawing;
 using DocumentFormat.OpenXml.Office2019.Drawing.SVG;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Vml;
+using DocumentFormat.OpenXml.Wordprocessing;
 using HtmlAgilityPack;
 using PowerPointConverter.Builder;
 using PowerPointConverter.Extension;
@@ -15,10 +17,12 @@ using ShapeCrawler.Drawing;
 using ShapeCrawler.SlideMasters;
 using ShapeCrawler.Slides;
 using ShapeCrawler.Units;
+using Svg.Skia;
 using System.Reflection.Emit;
 using A = DocumentFormat.OpenXml.Drawing;
 using D = System.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
+using S = ShapeCrawler.Shapes;
 
 namespace PowerPointConverter.Converter
 {
@@ -33,7 +37,7 @@ namespace PowerPointConverter.Converter
 
             var presentationPart = this.presentation.PresDocument.PresentationPart;
 
-            var colorMap = presentationPart?.HandoutMasterPart?.HandoutMaster?.ColorMap;
+            var colorMap = presentationPart?.SlideMasterParts?.FirstOrDefault()?.SlideMaster?.ColorMap;
 
             if (colorMap != null)
             {
@@ -102,7 +106,7 @@ namespace PowerPointConverter.Converter
                 return null;
             }
 
-            OpenXmlCompositeElement ps = shape.SdkOpenXmlElement as OpenXmlCompositeElement;
+            OpenXmlCompositeElement ps = (shape as S.Shape).OpenXmlElement as OpenXmlCompositeElement;
 
             if (ps == null)
             {
@@ -115,7 +119,7 @@ namespace PowerPointConverter.Converter
             {
                 appNonVisualProperties = ps.GetFirstChild<P.NonVisualShapeProperties>()?.ApplicationNonVisualDrawingProperties;
             }
-            else if (ps is P.Picture)
+            else if (ps is P.Picture || ps is A.Picture)
             {
                 appNonVisualProperties = ps.GetFirstChild<P.NonVisualPictureProperties>()?.ApplicationNonVisualDrawingProperties;
             }
@@ -137,6 +141,10 @@ namespace PowerPointConverter.Converter
                 {
                     transform = pic.ShapeProperties?.Transform2D;
                 }
+                else if (ps is P.Picture pic2)
+                {
+                    transform = pic2.ShapeProperties?.Transform2D;
+                }
 
                 var x = transform?.Offset?.X?.Value;
                 var y = transform?.Offset?.Y?.Value;
@@ -155,7 +163,7 @@ namespace PowerPointConverter.Converter
 
                 foreach (var ls in slide.LayoutSlide.Shapes)
                 {
-                    OpenXmlCompositeElement lps = ls.SdkOpenXmlElement as OpenXmlCompositeElement;
+                    OpenXmlCompositeElement lps = (ls as S.Shape).OpenXmlElement as OpenXmlCompositeElement;
 
                     if (lps == null)
                     {
@@ -168,7 +176,7 @@ namespace PowerPointConverter.Converter
                     {
                         appNonVisualProperties2 = lps.GetFirstChild<P.NonVisualShapeProperties>()?.ApplicationNonVisualDrawingProperties;
                     }
-                    else if (lps is P.Picture)
+                    else if (lps is P.Picture || lps is A.Picture)
                     {
                         appNonVisualProperties2 = lps.GetFirstChild<P.NonVisualPictureProperties>()?.ApplicationNonVisualDrawingProperties;
                     }
@@ -187,6 +195,10 @@ namespace PowerPointConverter.Converter
                         else if (lps is A.Picture pic2)
                         {
                             transform2 = pic2.ShapeProperties?.Transform2D;
+                        }
+                        else if (lps is P.Picture pic3)
+                        {
+                            transform2 = pic3.ShapeProperties?.Transform2D;
                         }
 
                         var x2 = transform2?.Offset?.X?.Value;
@@ -215,7 +227,7 @@ namespace PowerPointConverter.Converter
                             {
                                 return ls;
                             }
-                            else if (type == null && type2 == null && shape.PlaceholderType == ls.PlaceholderType)
+                            else if (shape.PlaceholderType == ls.PlaceholderType && shape.PlaceholderType != null)
                             {
                                 int count = slide.LayoutSlide.Shapes.Where(item => item.PlaceholderType == shape.PlaceholderType).Count();
 
@@ -246,7 +258,7 @@ namespace PowerPointConverter.Converter
             decimal height = shape.Height;
             double rotation = shape.Rotation;
 
-            var ps = shape.SdkOpenXmlElement as P.Shape;
+            var ps = (shape as S.Shape).OpenXmlElement as P.Shape;
 
             bool needUsePlaceHolder = false;
             var shapes = slide.Shapes;
@@ -288,7 +300,7 @@ namespace PowerPointConverter.Converter
             }
             else
             {
-                var cs = shape.SdkOpenXmlElement as P.ConnectionShape;
+                var cs = (shape as S.Shape).OpenXmlElement as P.ConnectionShape;
 
                 if (cs != null)
                 {
@@ -314,22 +326,24 @@ namespace PowerPointConverter.Converter
                 styleBuilder.Append("transform", $"scaleY(-1)");
             }
 
-            var geom = shapeProperties?.GetFirstChild<A.PresetGeometry>();
+            var presetGeom = shapeProperties?.GetFirstChild<A.PresetGeometry>();
+            var customGeom = shapeProperties?.GetFirstChild<A.CustomGeometry>();
             bool noFill = shapeProperties?.GetFirstChild<A.NoFill>() != null;
+            bool preventBackgroundColor = false;
 
-            if (geom == null)
+            if (presetGeom == null)
             {
                 if (layoutShape != null)
                 {
-                    geom = (layoutShape.SdkOpenXmlElement as P.Shape)?.ShapeProperties.GetFirstChild<A.PresetGeometry>();
+                    presetGeom = ((layoutShape as S.Shape).OpenXmlElement as P.Shape)?.ShapeProperties.GetFirstChild<A.PresetGeometry>();
                 }
             }
 
-            if (geom != null)
+            if (presetGeom != null)
             {
                 if (backgroundColor == null && !noFill && gradientFill == null && patternFill == null && solidFill == null)
                 {
-                    var style = shape.SdkOpenXmlElement.GetFirstChild<P.ShapeStyle>();
+                    var style = (shape as S.Shape).OpenXmlElement.GetFirstChild<P.ShapeStyle>();
 
                     if (style != null)
                     {
@@ -346,7 +360,7 @@ namespace PowerPointConverter.Converter
 
                 if (geomType == Geometry.RoundedRectangle || geomType == Geometry.Plaque)
                 {
-                    var formula = geom.AdjustValueList.GetFirstChild<ShapeGuide>()?.Formula;
+                    var formula = presetGeom.AdjustValueList.GetFirstChild<ShapeGuide>()?.Formula;
 
                     if (formula != null && formula.Value?.StartsWith("val ") == true)
                     {
@@ -354,7 +368,7 @@ namespace PowerPointConverter.Converter
 
                         var intValue = int.Parse(val);
 
-                        styleBuilder.Add("border-radius", $"{this.RoundValueByEmusPoints(intValue) * 50}px");
+                        styleBuilder.Add("border-radius", $"{ValueHelper.RoundValueByEmusPoints(intValue) * 50}px");
 
                         if (geomType == Geometry.RoundedRectangle)
                         {
@@ -393,6 +407,17 @@ namespace PowerPointConverter.Converter
                 else if (geomType == Geometry.RightTriangle)
                 {
                     this.AddRightTriangleStyle(solidFill, styleBuilder);
+                }
+            }
+            else if (customGeom != null)
+            {
+                A.PathList pathList = customGeom.PathList;
+
+                if (pathList != null)
+                {
+                    this.SetCustomGeometryStyle(customGeom, styleBuilder, width, height, solidFill, backgroundColor);
+
+                    preventBackgroundColor = true;
                 }
             }
 
@@ -450,11 +475,19 @@ namespace PowerPointConverter.Converter
             }
             else if (solidFill != null)
             {
-                this.SetFillStyle(styleBuilder, solidFill.PresetColor, solidFill.SystemColor, solidFill.SchemeColor, solidFill.RgbColorModelHex, solidFill.RgbColorModelPercentage, true);
+                if (!preventBackgroundColor)
+                {
+                    this.SetFillStyle(styleBuilder, solidFill.PresetColor, solidFill.SystemColor, solidFill.SchemeColor, solidFill.RgbColorModelHex, solidFill.RgbColorModelPercentage, true);
+                }
             }
             else
             {
-                this.SetBackgroudStyle(styleBuilder, new FillInfo() { ColorInfo = new ColorInfo() { Color = backgroundColor, LuminanceModulation = shape.Fill?.LuminanceModulation, LuminanceOffset = shape.Fill?.LuminanceOffset }, Alpha = shape.Fill?.Alpha, ImageInfo = new ImageInfo() { Image = shape?.Fill?.Picture } });
+                this.SetBackgroudStyle(styleBuilder, new FillInfo()
+                {
+                    ColorInfo = new ColorInfo() { Color = backgroundColor, LuminanceModulation = shape.Fill?.LuminanceModulation, LuminanceOffset = shape.Fill?.LuminanceOffset },
+                    Alpha = shape.Fill?.Alpha,
+                    ImageInfo = new ImageInfo() { Image = shape?.Fill?.Picture, DisplayWidth = (double)shape.Width, DisplayHeight = (double)shape.Height }
+                });
             }
 
             return styleBuilder;
@@ -467,7 +500,7 @@ namespace PowerPointConverter.Converter
 
             if (width > 0)
             {
-                styleBuilder.Add($"{(shape.Height == 0 ? "height" : "width")}", $"{this.GetEmusPointsValue(width.Value)}px");
+                styleBuilder.Add($"{(shape.Height == 0 ? "height" : "width")}", $"{ValueHelper.GetEmusPointsValue(width.Value)}px");
             }
 
             if (fill != null)
@@ -503,7 +536,11 @@ namespace PowerPointConverter.Converter
                 double luminanceModulation = ValueHelper.RoundValueByMultiplicationFactor1000(luminanceModulationValue);
                 double luminanceOffset = ValueHelper.RoundValueByMultiplicationFactor1000(luminanceOffsetValue);
 
-                this.SetBackgroudStyle(styleBuilder, new FillInfo() { ColorInfo = new ColorInfo() { Color = bgColor, LuminanceModulation = luminanceModulation, LuminanceOffset = luminanceOffset }, Alpha = alpha });
+                this.SetBackgroudStyle(styleBuilder, new FillInfo()
+                {
+                    ColorInfo = new ColorInfo() { Color = bgColor, LuminanceModulation = luminanceModulation, LuminanceOffset = luminanceOffset },
+                    Alpha = alpha
+                });
             }
         }
 
@@ -560,24 +597,75 @@ namespace PowerPointConverter.Converter
             return "solid";
         }
 
+        private void ProcessImageParts(P.CommonSlideData commonSlideData, IEnumerable<ImagePart> imageParts, IEnumerable<IdPartPair> idParts, HtmlDocument doc, HtmlNode containerNode)
+        {
+            if (commonSlideData != null)
+            {
+                P.ShapeTree tree = commonSlideData.GetFirstChild<P.ShapeTree>();
+
+                if (tree != null)
+                {
+                    foreach (var child in tree.ChildElements)
+                    {
+                        if (child is P.Picture)
+                        {
+                            this.AddImage(doc, containerNode, child as P.Picture, imageParts, idParts, 0);
+                        }
+                        else if (child is P.GroupShape)
+                        {
+                            int index = 0;
+
+                            foreach (var gs in child.ChildElements)
+                            {
+                                if (gs is P.Picture)
+                                {
+                                    this.AddImage(doc, containerNode, gs as P.Picture, imageParts, idParts, index);
+                                }
+
+                                index++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         private void AddImage(HtmlDocument doc, HtmlNode containerNode, P.Picture picture, IEnumerable<ImagePart> imageParts, IEnumerable<IdPartPair> idParts, int zIndex = 0)
         {
             var properties = picture.ShapeProperties;
-            string name = picture?.NonVisualPictureProperties?.NonVisualDrawingProperties?.Name;
 
             var transform = properties.Transform2D;
+
+            if (transform == null) //for slide picture, if transform is null, it's a placeholder picture, it will process as Shape.
+            {
+                return;
+            }
+
+            string name = picture?.NonVisualPictureProperties?.NonVisualDrawingProperties?.Name;
 
             var rotation = transform.Rotation?.Value;
             var flipH = transform.HorizontalFlip?.Value;
             var flipV = transform.VerticalFlip?.Value;
+            A.SourceRectangle sourceRectangle = picture.BlipFill?.SourceRectangle;
+            CropInfo cropInfo = null;
+
+            if (sourceRectangle != null)
+            {
+                cropInfo = new CropInfo();
+
+                cropInfo.Left = ValueHelper.RoundValueByMultiplicationFactor100000(sourceRectangle.Left?.Value ?? 0, 5);
+                cropInfo.Right = ValueHelper.RoundValueByMultiplicationFactor100000(sourceRectangle.Right?.Value ?? 0, 5);
+                cropInfo.Top = ValueHelper.RoundValueByMultiplicationFactor100000(sourceRectangle.Top?.Value ?? 0, 5);
+                cropInfo.Bottom = ValueHelper.RoundValueByMultiplicationFactor100000(sourceRectangle.Bottom?.Value ?? 0, 5);
+            }
 
             var offset = transform.Offset;
 
-            var left = this.RoundValueByEmusPoints(offset.X.Value);
-            var top = this.RoundValueByEmusPoints(offset.Y.Value);
+            var left = ValueHelper.RoundValueByEmusPoints(offset.X.Value);
+            var top = ValueHelper.RoundValueByEmusPoints(offset.Y.Value);
 
-            var width = this.RoundValueByEmusPoints(transform.Extents.Cx.Value);
-            var height = this.RoundValueByEmusPoints(transform.Extents.Cy.Value);
+            var width = ValueHelper.RoundValueByEmusPoints(transform.Extents.Cx.Value);
+            var height = ValueHelper.RoundValueByEmusPoints(transform.Extents.Cy.Value);
 
             var blip = picture.BlipFill?.Blip;
 
@@ -618,46 +706,68 @@ namespace PowerPointConverter.Converter
                             styleBuilder.Append("transform", $"scaleY(-1)");
                         }
 
-                        using (StreamReader reader = new StreamReader(stream))
+                        HtmlNode node = null;
+
+                        if (isSvg)
                         {
-                            HtmlNode node = null;
+                            string base64String = null;
 
-                            if (isSvg)
+                            if (sourceRectangle != null)
                             {
-                                string svgString = reader.ReadToEnd();
-
-                                var stretch = blip?.GetFirstChild<A.Stretch>();
-
-                                if (stretch == null || stretch.ChildElements.Count == 0)
+                                using (var svg = new SKSvg())
                                 {
-                                    HtmlDocument svgDoc = new HtmlDocument();
-                                    svgDoc.LoadHtml(svgString);
+                                    svg.Load(stream);
 
-                                    var svg = svgDoc.DocumentNode.ChildNodes[0];
+                                    var svgRect = svg.Model.CullRect;
+                                    float svgWidth = svgRect.Width;
+                                    float svgHeigth = svgRect.Height;
 
-                                    svg.SetAttributeValue("preserveAspectRatio", "xMinYMin slice");
-                                    svg.SetAttributeValue("style", $"width:{width}px;height:{height}");
+                                    SkiaSharp.SKPicture pic = svg.Picture;
 
-                                    svgString = svgDoc.DocumentNode.InnerHtml;
+                                    var pixelsWidth = (double)ValueHelper.RoundValueByEmusPixels(transform.Extents.Cx.Value);
+                                    var pixelsHeight = (double)ValueHelper.RoundValueByEmusPixels(transform.Extents.Cy.Value);
+
+                                    ImageInfo imageInfo = new ImageInfo()
+                                    {
+                                        Stream = stream,
+                                        Picture = pic,
+                                        CropInfo = cropInfo,
+                                        ActualWidth = svgWidth,
+                                        ActualHeight = svgHeigth,
+                                        DisplayWidth = pixelsWidth,
+                                        DisplayHeight = pixelsHeight,
+                                    };
+
+                                    base64String = FileHelper.GetBase64StringFromImageInfo(imageInfo, this.option.ReduceImageQuality);
                                 }
-
-                                node = doc.CreateElement("div");
-
-                                node.AddStyle(styleBuilder);
-
-                                node.InnerHtml = svgString;
-
-                                containerNode.AppendChild(node);
                             }
                             else
                             {
-                                node = this.CreateImageNode(doc, containerNode, styleBuilder, stream);
+                                using (StreamReader reader = new StreamReader(stream))
+                                {
+                                    string svgString = reader.ReadToEnd();
+
+                                    base64String = FileHelper.GetBase64StringFromSvgString(svgString);
+                                }
                             }
 
-                            if (node != null && name != null)
-                            {
-                                node.SetName(name);
-                            }
+                            styleBuilder.AddBackgroundImageUrl(base64String);
+                            styleBuilder.AddBackgroudImageStyle();
+
+                            node = doc.CreateElement("div");
+
+                            node.AddStyle(styleBuilder);
+
+                            containerNode.AppendChild(node);
+                        }
+                        else
+                        {
+                            node = this.CreateImageNode(doc, containerNode, styleBuilder, stream, (double)width, (double)height, cropInfo);
+                        }
+
+                        if (node != null && name != null)
+                        {
+                            node.SetName(name);
                         }
 
                         break;
@@ -694,11 +804,14 @@ namespace PowerPointConverter.Converter
             }
         }
 
-        private HtmlNode CreateImageNode(HtmlDocument doc, HtmlNode containerNode, StyleBuilder styleBuilder, Stream stream)
+        private HtmlNode CreateImageNode(HtmlDocument doc, HtmlNode containerNode, StyleBuilder styleBuilder, Stream stream, double width, double height, CropInfo cropInfo = null)
         {
             HtmlNode imgNode = doc.CreateElement("div");
 
-            this.SetBackgroudStyle(styleBuilder, new FillInfo() { ImageInfo = new ImageInfo() { Stream = stream } });
+            this.SetBackgroudStyle(styleBuilder, new FillInfo()
+            {
+                ImageInfo = new ImageInfo() { Stream = stream, DisplayWidth = width, DisplayHeight = height, CropInfo = cropInfo }
+            });
 
             styleBuilder.Add("z-index:-1");
 
@@ -709,9 +822,61 @@ namespace PowerPointConverter.Converter
             return imgNode;
         }
 
-        private void SetBackgroudStyle(StyleBuilder styleBuilder, IShapeFill fill)
+        private void SetBackgroudStyle(StyleBuilder styleBuilder, IShapeFill fill, double width, double height)
         {
-            this.SetBackgroudStyle(styleBuilder, new FillInfo() { ColorInfo = new ColorInfo() { Color = fill?.Color, LuminanceModulation = fill?.LuminanceModulation, LuminanceOffset = fill?.LuminanceOffset }, Alpha = fill?.Alpha, ImageInfo = new ImageInfo() { Image = fill?.Picture } });
+            this.SetBackgroudStyle(styleBuilder, new FillInfo()
+            {
+                ColorInfo = new ColorInfo() { Color = fill?.Color, LuminanceModulation = fill?.LuminanceModulation, LuminanceOffset = fill?.LuminanceOffset },
+                Alpha = fill?.Alpha,
+                ImageInfo = new ImageInfo() { Image = fill?.Picture, ActualWidth = width, DisplayHeight = height }
+            });
+        }
+
+        private void SetSlideBackgroudStyle(ShapeFill backgroundFill, A.SolidFill solidFill, byte[] backgroundImageBytes, StyleBuilder styleBuilder)
+        {
+            if (backgroundFill != null)
+            {
+                this.SetBackgroudStyle(styleBuilder, new FillInfo()
+                {
+                    ColorInfo = this.GetColorInfo(backgroundFill),
+                    IsColorTransformed = true,
+                    ImageInfo = new ImageInfo() { Bytes = backgroundImageBytes }
+                });
+            }
+            else
+            {
+                SetBackgroudStyle(styleBuilder,
+                new FillInfo()
+                {
+                    ColorInfo = this.GetColorInfo(solidFill),
+                    IsColorTransformed = true,
+                    ImageInfo = new ImageInfo() { Bytes = backgroundImageBytes }
+                });
+            }
+        }
+
+        private ColorInfo GetColorInfo(ShapeFill shapeFill)
+        {
+            var background = shapeFill.OpenXmlElement as P.BackgroundProperties;
+
+            if (background != null)
+            {
+                A.SolidFill solidFill = background.GetFirstChild<A.SolidFill>();
+                A.BlipFill blipFill = background.GetFirstChild<A.BlipFill>();
+                A.PatternFill patternFill = background.GetFirstChild<A.PatternFill>(); ////to do
+                A.GradientFill gradientFill = background.GetFirstChild<A.GradientFill>(); ////to do
+
+                if (solidFill != null)
+                {
+                    return this.GetColorInfo(solidFill);
+                }
+                else if (blipFill != null)
+                {
+                    return this.GetColorInfo(blipFill);
+                }
+            }
+
+            return null;
         }
 
         private void SetBackgroudStyle(StyleBuilder styleBuilder, FillInfo fillInfo)
@@ -722,8 +887,10 @@ namespace PowerPointConverter.Converter
             ImageInfo imageInfo = fillInfo.ImageInfo;
             IImage img = imageInfo?.Image;
             Stream stream = imageInfo?.Stream;
+            byte[] bytes = imageInfo?.Bytes;
             double? luminanceModulation = colorInfo?.LuminanceModulation;
             double? luminanceOffset = colorInfo?.LuminanceOffset;
+            CropInfo cropInfo = imageInfo?.CropInfo;
 
             if (fillInfo?.IsColorTransformed == true && color != null)
             {
@@ -772,25 +939,30 @@ namespace PowerPointConverter.Converter
                 }
             }
 
-            if (img != null || stream != null)
+            if (img != null || stream != null || bytes != null)
             {
                 string base64String = null;
 
-                if (img != null)
+                if (cropInfo == null)
                 {
-                    base64String = ValueHelper.GetBase64StringFromByteArray(img, this.reduceImageQuality);
-                }
-                else
-                {
-                    byte[] bytes = null;
-
-                    using (MemoryStream ms = new MemoryStream())
+                    if (img != null)
                     {
-                        stream.CopyTo(ms);
-                        bytes = ms.ToArray();
+                        base64String = FileHelper.GetBase64StringFromImageByteArray(img, this.reduceImageQuality);
                     }
+                    else if (stream != null)
+                    {
+                        base64String = FileHelper.GetBase64StringFromImageStream(stream, this.reduceImageQuality);
+                    }
+                    else if (bytes != null)
+                    {
+                        base64String = FileHelper.GetBase64StringFromImageByteArray(bytes, this.reduceImageQuality);
+                    }
+                }
+                else if (imageInfo != null)
+                {
+                    imageInfo.Bytes = img?.AsByteArray();
 
-                    base64String = ValueHelper.GetBase64StringFromByteArray(bytes, this.reduceImageQuality);
+                    base64String = FileHelper.GetBase64StringFromImageInfo(imageInfo, this.reduceImageQuality);
                 }
 
                 styleBuilder.AddBackgroundImageUrl(base64String);
@@ -856,12 +1028,14 @@ namespace PowerPointConverter.Converter
             A.LuminanceModulation luminanceModulation = null;
             A.LuminanceOffset luminanceOffset = null;
             A.Alpha alpha = null;
+            A.Tint tint = null;
 
             if (element != null)
             {
                 luminanceModulation = element.GetFirstChild<A.LuminanceModulation>();
                 luminanceOffset = element.GetFirstChild<A.LuminanceOffset>();
                 alpha = element.GetFirstChild<A.Alpha>();
+                tint = element.GetFirstChild<A.Tint>();
             }
 
             if (colorValue != null)
@@ -892,9 +1066,9 @@ namespace PowerPointConverter.Converter
 
                     if (colorInfo.Color != null)
                     {
-                        if (alpha != null)
+                        if (alpha != null || tint != null)
                         {
-                            var alphaValue = alpha?.Val ?? 1;
+                            var alphaValue = alpha?.Val ?? tint.Val?? ValueHelper.MultiplicationFactor100000;
 
                             colorInfo.Alpha = alphaValue;
 
@@ -916,15 +1090,35 @@ namespace PowerPointConverter.Converter
                 return null;
             }
 
+            if (element is A.Duotone) ////to do
+            {
+
+            }
+
             var presetColor = element.GetFirstChild<A.PresetColor>();
             var systemColor = element.GetFirstChild<A.SystemColor>();
             var schemaColor = element.GetFirstChild<A.SchemeColor>();
             var rgbColorModelHex = element.GetFirstChild<A.RgbColorModelHex>();
             var rgbColorModelPercentage = element.GetFirstChild<A.RgbColorModelPercentage>();
 
-            var colorInfo = this.GetColorInfo(presetColor, systemColor, schemaColor, rgbColorModelHex, rgbColorModelPercentage);
+            if (presetColor != null || systemColor != null || schemaColor != null || rgbColorModelHex != null)
+            {
+                var colorInfo = this.GetColorInfo(presetColor, systemColor, schemaColor, rgbColorModelHex, rgbColorModelPercentage);
 
-            return colorInfo;
+                return colorInfo;
+            }
+            else if (element.ChildElements != null)
+            {
+                foreach (var child in element.ChildElements)
+                {
+                    if (child is OpenXmlCompositeElement ele)
+                    {
+                        return this.GetColorInfo(ele);
+                    }
+                }
+            }
+
+            return null;
         }
 
         private ColorInfo GetColorInfo(A.ColorType color)
@@ -985,16 +1179,6 @@ namespace PowerPointConverter.Converter
             styleBuilder.Add("z-index:0");
         }
 
-        private decimal GetEmusPointsValue(long value)
-        {
-            return new Emus(value).AsPoints();
-        }
-
-        private decimal RoundValueByEmusPoints(long value)
-        {
-            return ValueHelper.RoundValue(new Emus(value).AsPoints());
-        }
-
         private void Log(string message, LogType logType = LogType.Info)
         {
             if (this.enableLog == false)
@@ -1009,6 +1193,95 @@ namespace PowerPointConverter.Converter
             else if (logType == LogType.Error)
             {
                 LogHelper.LogError(message);
+            }
+        }
+
+        private void AddMediaShape(ShapeCrawler.MediaContent.MediaShape shape, DrawingSlide slide, StyleBuilder styleBuilder, HtmlDocument doc, HtmlNode parentNode)
+        {
+            P.Picture picture = shape.OpenXmlElement as P.Picture;
+
+            this.AddMediaFromPicture(shape, slide, picture, styleBuilder, doc, parentNode);
+        }
+
+        private void AddMediaFromPicture(IShape shape, DrawingSlide slide, P.Picture picture, StyleBuilder styleBuilder, HtmlDocument doc, HtmlNode parentNode)
+        {
+            var nonVisualDrawingProperties = picture?.GetFirstChild<P.NonVisualPictureProperties>()?.GetFirstChild<P.ApplicationNonVisualDrawingProperties>();
+            var videoFile = nonVisualDrawingProperties?.GetFirstChild<A.VideoFromFile>();
+            var audioFile = nonVisualDrawingProperties?.GetFirstChild<A.AudioFromFile>();
+
+            if (shape.Width < 250)
+            {
+                styleBuilder.Add("width:250px;");
+            }
+
+            if (videoFile != null)
+            {
+                string rid = videoFile.Link;
+
+                VideoReferenceRelationship relationship = slide.SlidePart.GetReferenceRelationship(rid) as VideoReferenceRelationship;
+
+                if (relationship != null)
+                {
+                    Stream stream = relationship.DataPart.GetStream();
+
+                    var videoNode = doc.CreateElement("video");
+
+                    string fileType = System.IO.Path.GetExtension(relationship.Uri.ToString()).Trim('.');
+
+                    videoNode.SetAttributeValue("src", FileHelper.GetBase64StringFromMediaByteArray(stream, "video", fileType));
+
+                    videoNode.SetName(shape.Name);
+                    videoNode.SetAttributeValue("controls", "true");
+
+                    videoNode.AddStyle(styleBuilder);
+
+                    parentNode.AppendChild(videoNode);
+                }
+            }
+            else if (audioFile != null)
+            {
+                string rid = audioFile.Link;
+
+                AudioReferenceRelationship relationship = slide.SlidePart.GetReferenceRelationship(rid) as AudioReferenceRelationship;
+
+                if (relationship != null)
+                {
+                    Stream stream = relationship.DataPart.GetStream();
+
+                    var audioNode = doc.CreateElement("audio");
+
+                    audioNode.SetAttributeValue("src", FileHelper.GetBase64StringFromMediaByteArray(stream, "audio", "mpeg"));
+
+                    audioNode.SetName(shape.Name);
+                    audioNode.SetAttributeValue("controls", "true");
+
+                    audioNode.AddStyle(styleBuilder);
+
+                    parentNode.AppendChild(audioNode);
+                }
+            }
+        }
+
+        private void SetCustomGeometryStyle(A.CustomGeometry customGeometry, StyleBuilder styleBuilder, decimal width, decimal height, A.SolidFill solidFill, string backgroundColor)
+        {
+            A.PathList pathList = customGeometry.PathList;
+
+            if (pathList != null)
+            {
+                ColorInfo colorInfo = this.GetColorInfo(solidFill);
+
+                string pathData = GeometryHelper.ConvertPathListToSvgPathData(pathList);
+
+                string svg = GeometryHelper.GetSvgString(pathData, ValueHelper.PointsValueToPixelsValue(width), ValueHelper.PointsValueToPixelsValue(height), colorInfo?.Color ?? ColorHelper.GetColor(backgroundColor)?.ToHex());
+
+                styleBuilder.AddBackgroundImageUrl(FileHelper.GetBase64StringFromSvgString(svg));
+
+                if (!styleBuilder.Contains("z-index"))
+                {
+                    styleBuilder.Add("z-index:0");
+                }
+
+                styleBuilder.AddBackgroudImageStyle();
             }
         }
     }

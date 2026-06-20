@@ -1,14 +1,19 @@
-﻿using ImageMagick.Colors;
+﻿using DocumentFormat.OpenXml.Linq;
+using DocumentFormat.OpenXml.Wordprocessing;
+using ImageMagick.Colors;
 using PowerPointConverter.Extension;
 using PowerPointConverter.Model;
 using ShapeCrawler;
 using System.Drawing;
+using A = DocumentFormat.OpenXml.Drawing;
 using D = System.Drawing;
 
 namespace PowerPointConverter.Helper
 {
     public class ColorHelper
     {
+        public static readonly string[] ColorElementNames = [nameof(A.PresetColor), nameof(A.SystemColor), nameof(A.SchemeColor),  nameof(A.RgbColorModelHex)];
+
         public static D.Color? GetColor(string color)
         {
             if(string.IsNullOrEmpty(color))

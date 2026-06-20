@@ -28,11 +28,13 @@
         /// </summary>
         private void InitializeComponent()
         {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(frmMain));
             webView = new Microsoft.Web.WebView2.WinForms.WebView2();
             menuStrip1 = new MenuStrip();
             tsmiOpenFile = new ToolStripMenuItem();
             toolsToolStripMenuItem = new ToolStripMenuItem();
             tsmiColorTransform = new ToolStripMenuItem();
+            tsmiUnitConversion = new ToolStripMenuItem();
             openFileDialog1 = new OpenFileDialog();
             btnFirst = new Button();
             btnPrevious = new Button();
@@ -78,7 +80,7 @@
             // 
             // toolsToolStripMenuItem
             // 
-            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { tsmiColorTransform });
+            toolsToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { tsmiColorTransform, tsmiUnitConversion });
             toolsToolStripMenuItem.Name = "toolsToolStripMenuItem";
             toolsToolStripMenuItem.Size = new Size(52, 21);
             toolsToolStripMenuItem.Text = "Tools";
@@ -89,6 +91,13 @@
             tsmiColorTransform.Size = new Size(172, 22);
             tsmiColorTransform.Text = "Color Transform";
             tsmiColorTransform.Click += tsmiColorTransform_Click;
+            // 
+            // tsmiUnitConversion
+            // 
+            tsmiUnitConversion.Name = "tsmiUnitConversion";
+            tsmiUnitConversion.Size = new Size(172, 22);
+            tsmiUnitConversion.Text = "Unit Conversion";
+            tsmiUnitConversion.Click += tsmiUnitConversion_Click;
             // 
             // openFileDialog1
             // 
@@ -216,6 +225,7 @@
             Controls.Add(btnFirst);
             Controls.Add(webView);
             Controls.Add(menuStrip1);
+            Icon = (Icon)resources.GetObject("$this.Icon");
             MainMenuStrip = menuStrip1;
             Name = "frmMain";
             StartPosition = FormStartPosition.CenterScreen;
@@ -248,5 +258,6 @@
         private ToolStripMenuItem tsmiColorTransform;
         private CheckBox chkEnableLog;
         private CheckBox chkUseLowQualityForImage;
+        private ToolStripMenuItem tsmiUnitConversion;
     }
 }

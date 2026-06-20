@@ -94,7 +94,7 @@ namespace PowerPointConverter.Converter
 
                             if (width > 0)
                             {
-                                cellStyleBuilder.Add($"border-{position}", $"{this.GetEmusPointsValue(width.Value)}px solid");
+                                cellStyleBuilder.Add($"border-{position}", $"{ValueHelper.GetEmusPointsValue(width.Value)}px solid");
                             }
 
                             if (fill != null)

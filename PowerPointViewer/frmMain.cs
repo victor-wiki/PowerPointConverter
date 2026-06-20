@@ -63,6 +63,8 @@ namespace PowerPointViewer
 
                 this.filePath = filePath;
 
+                this.Text = filePath;
+
                 this.bgWorker.RunWorkerAsync();
             }
         }
@@ -72,7 +74,8 @@ namespace PowerPointViewer
             ConvertOption option = new ConvertOption()
             {
                 ReduceImageQuality = this.chkUseLowQualityForImage.Checked,
-                EnableLog = this.chkEnableLog.Checked
+                EnableLog = this.chkEnableLog.Checked,
+                //SlideNumbers = new List<int>() { }
             };
 
             Ppt2Html converter = new Ppt2Html(filePath, option);
@@ -86,7 +89,7 @@ namespace PowerPointViewer
             if (this.result.IsOK == false)
             {
                 MessageBox.Show(this.result.Message);
-            }            
+            }
 
             if (this.result.Infos != null && this.result.Infos.Count > 0)
             {
@@ -217,6 +220,12 @@ namespace PowerPointViewer
         private void tsmiColorTransform_Click(object sender, EventArgs e)
         {
             frmColorTransform frm = new frmColorTransform();
+            frm.Show();
+        }
+
+        private void tsmiUnitConversion_Click(object sender, EventArgs e)
+        {
+            frmUnitConversion frm = new frmUnitConversion();
             frm.Show();
         }
     }

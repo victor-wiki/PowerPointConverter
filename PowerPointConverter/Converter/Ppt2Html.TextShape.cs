@@ -10,6 +10,7 @@ using ShapeCrawler.Slides;
 using System.Text;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
+using S = ShapeCrawler.Shapes;
 
 namespace PowerPointConverter.Converter
 {
@@ -17,8 +18,8 @@ namespace PowerPointConverter.Converter
     {
         public HtmlNode CreateTextShapeNode(IShape shape, IShape layoutShape, StyleBuilder styleBuilder, HtmlDocument doc)
         {
-            P.Shape ps = shape.SdkOpenXmlElement as P.Shape;
-            P.Shape lps = layoutShape?.SdkOpenXmlElement as P.Shape;
+            P.Shape ps = (shape as S.Shape).OpenXmlElement as P.Shape;
+            P.Shape lps = (layoutShape as S.Shape)?.OpenXmlElement as P.Shape;
 
             var txt = shape.TextBox;
             decimal leftMargin = txt.LeftMargin;
@@ -36,14 +37,14 @@ namespace PowerPointConverter.Converter
             bool isSlideNumber = shape.PlaceholderType == PlaceholderType.SlideNumber;
             Geometry? geometry = shape.GeometryType;
 
-            if(this.masterTextStyle == null)
+            if (this.masterTextStyle == null)
             {
                 this.masterTextStyle = this.presentation.GetSdkPresentationDocument().PresentationPart.SlideMasterParts.FirstOrDefault()?.SlideMaster?.TextStyles;
             }
-            
+
             P.TextListStyleType masterListStyle = isTitle ? this.masterTextStyle?.TitleStyle : this.masterTextStyle?.BodyStyle;
-            var layoutListStyle = layoutShape?.SdkOpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
-            var slideListStyle = shape.SdkOpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
+            var layoutListStyle = (layoutShape as S.Shape)?.OpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
+            var slideListStyle = (shape as S.Shape).OpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
 
             if (geometry == Geometry.Ellipse)
             {
@@ -79,7 +80,11 @@ namespace PowerPointConverter.Converter
 
                     if (layoutShapeAnchor == null)
                     {
-                        var align = lps.TextBody?.ListStyle?.Level1ParagraphProperties?.Alignment;
+                        int level = txt.Paragraphs?.FirstOrDefault()?.IndentLevel ?? 1;
+
+                        A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutListStyle);
+
+                        var align = layoutLevelProperties?.Alignment;
 
                         if (align == "ctr")
                         {
@@ -105,7 +110,7 @@ namespace PowerPointConverter.Converter
             {
                 if (layoutTextBox != null)
                 {
-                    var aBodyPr2 = layoutShape.SdkOpenXmlElement.GetFirstChild<A.BodyProperties>();
+                    var aBodyPr2 = (layoutShape as S.Shape).OpenXmlElement.GetFirstChild<A.BodyProperties>();
 
                     if (aBodyPr2?.AnchorCenter?.Value == true)
                     {
@@ -128,10 +133,27 @@ namespace PowerPointConverter.Converter
 
             if (!textHAlign.HasValue)
             {
-                textHAlign = TextHorizontalAlignment.Left;
+                if (layoutTextBox != null)
+                {
+                    int level = txt.Paragraphs?.FirstOrDefault()?.IndentLevel ?? 1;
+
+                    A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutListStyle);
+
+                    var align = layoutLevelProperties?.Alignment;
+
+                    if (align == "r")
+                    {
+                        textHAlign = TextHorizontalAlignment.Right;
+                    }
+                }
+                else
+                {
+                    textHAlign = TextHorizontalAlignment.Left;
+                }
             }
 
-            if (textVAlign == TextVerticalAlignment.Middle || textVAlign == TextVerticalAlignment.Bottom)
+            if (textVAlign == TextVerticalAlignment.Middle || textVAlign == TextVerticalAlignment.Bottom
+                || textHAlign == TextHorizontalAlignment.Center || textHAlign == TextHorizontalAlignment.Right)
             {
                 styleBuilder.Add("display:flex");
             }
@@ -145,10 +167,6 @@ namespace PowerPointConverter.Converter
                 styleBuilder.Add("align-items:end");
             }
 
-            if (textHAlign == TextHorizontalAlignment.Center)
-            {
-                styleBuilder.Add("justify-content:center");
-            }
             #endregion
 
             var paragraphs = txt.Paragraphs;
@@ -159,6 +177,8 @@ namespace PowerPointConverter.Converter
             Dictionary<int, ParagraphItemInfo> dictParagraphItemInfo = new Dictionary<int, ParagraphItemInfo>();
 
             int i = 0;
+            string lastAlign = null;
+            bool isSameAlign = true;
 
             foreach (ShapeCrawler.Paragraph p in paragraphs)
             {
@@ -169,15 +189,18 @@ namespace PowerPointConverter.Converter
                 A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutListStyle);
                 A.TextParagraphPropertiesType masterLevelProperties = this.GetParagraphPropertiesByLevel(level, masterListStyle);
 
-                string text = p.Text;           
+                string text = p.Text;
 
                 string fontColor = ColorHelper.GetHexColor(p.FontColor);
+                decimal? fontSize = null;
 
                 var children = p.SdkOpenXmlElement.ChildElements;
 
                 StringBuilder sbRunText = new StringBuilder();
 
                 #region Subitem
+
+                int j = 0;
 
                 foreach (var child in children)
                 {
@@ -190,6 +213,7 @@ namespace PowerPointConverter.Converter
                         var layoutLevelRunProperties = layoutLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
                         var masterLevelRunProperties = masterLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
 
+                        Int32? size = this.GetFontSize(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
                         BooleanValue? bold = this.GetFontBold(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
                         BooleanValue? italic = this.GetFontItalic(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
                         string underline = this.GetFontUnderline(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
@@ -201,6 +225,17 @@ namespace PowerPointConverter.Converter
                         StyleBuilder itemStyleBuilder = new StyleBuilder();
 
                         #region Font Style
+                        if (size.HasValue)
+                        {
+                            itemStyleBuilder.Add($"font-size:{ValueHelper.RoundValueByMultiplicationFactor100(size.Value)}px");
+
+                            if (i == 0 && j == 0)
+                            {
+                                fontSize = size.Value;
+                                j++;
+                            }
+                        }
+
                         if (bold?.Value == true)
                         {
                             itemStyleBuilder.Add("font-weight:bold");
@@ -267,16 +302,7 @@ namespace PowerPointConverter.Converter
                 }
                 #endregion
 
-                #region Text Alignment
                 var portion = p.Portions.FirstOrDefault();
-
-                TextHorizontalAlignment paragraphAlign = p.HorizontalAlignment;
-
-                if (paragraphAlign == TextHorizontalAlignment.Center)
-                {
-                    styleBuilder.Add("display:flex;justify-content:center");
-                }
-                #endregion
 
                 #region Bullet
                 bool isBullet = false;
@@ -286,7 +312,7 @@ namespace PowerPointConverter.Converter
                 A.BulletFont bulletFont = null;
                 A.BulletColor bulletColor = null;
                 A.BulletSizePercentage bulletSizePercentage = null;
-                A.AutoNumberedBullet autoNumber = null;                
+                A.AutoNumberedBullet autoNumber = null;
 
                 string bulletColorValue = null;
                 string bulletSizePercentageValue = null;
@@ -294,13 +320,22 @@ namespace PowerPointConverter.Converter
                 Int32Value? marginRight = null;
                 Int32Value? indent = null;
                 bool useMasterProperty = false;
+                string align = null;
 
                 marginLeft = this.GetLeftMargin(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
                 marginRight = this.GetRightMargin(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
 
                 indent = this.GetIndent(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
+                align = this.GetAlign(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
 
-                if(!isFooter && !isSlideNumber)
+                if (lastAlign != null && align != null && align != lastAlign)
+                {
+                    isSameAlign = false;
+                }
+
+                lastAlign = align;
+
+                if (!isFooter && !isSlideNumber)
                 {
                     NoBullet noBullet = this.GetNoBullet(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
 
@@ -312,7 +347,7 @@ namespace PowerPointConverter.Converter
                         bulletSizePercentage = this.GetBulletSizePercentage(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
                         autoNumber = this.GetBulletAutoNumber(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
 
-                        isBullet = (bulletCharacter != null && bulletCharacter.Char!= "•") || bulletColor != null || bulletSizePercentage != null || (bulletFont != null && bulletFont.CharacterSet!="0");
+                        isBullet = (bulletCharacter != null && bulletCharacter.Char != "•") || bulletColor != null || bulletSizePercentage != null || (bulletFont != null && bulletFont.CharacterSet != "0");
 
                         isAutoNumber = autoNumber != null;
                     }
@@ -378,7 +413,7 @@ namespace PowerPointConverter.Converter
                             bulletType = "disc";
                         }
                     }
-                }                
+                }
 
                 if (!dictParagraphItemInfo.ContainsKey(level))
                 {
@@ -399,11 +434,12 @@ namespace PowerPointConverter.Converter
                 }
                 #endregion
 
-                #region Font Style         
+                #region Font Style                  
 
                 if (portion != null)
                 {
                     var font = portion.Font;
+                    fontSize = font.Size;
 
                     string[] excludeKeys = null;
 
@@ -436,29 +472,29 @@ namespace PowerPointConverter.Converter
 
                     if (lineSpacing != null)
                     {
-                        this.SetSpacingStyle(paragraphStyleBulider, lineSpacing.SpacingPoints, lineSpacing.SpacingPercent, "line-height");
+                        this.SetSpacingStyle(paragraphStyleBulider, lineSpacing.SpacingPoints, lineSpacing.SpacingPercent, fontSize, "line-height");
                     }
 
                     if (spaceBefore != null)
                     {
-                        this.SetSpacingStyle(paragraphStyleBulider, spaceBefore.SpacingPoints, spaceBefore.SpacingPercent, "margin-top");
+                        this.SetSpacingStyle(paragraphStyleBulider, spaceBefore.SpacingPoints, spaceBefore.SpacingPercent, fontSize, "margin-top");
                     }
 
                     if (spaceAfter != null)
                     {
-                        this.SetSpacingStyle(paragraphStyleBulider, spaceAfter.SpacingPoints, spaceAfter.SpacingPercent, "margin-bottom");
+                        this.SetSpacingStyle(paragraphStyleBulider, spaceAfter.SpacingPoints, spaceAfter.SpacingPercent, fontSize, "margin-bottom");
                     }
                     #endregion
+
+                    if (align != null)
+                    {
+                        paragraphStyleBulider.Add("text-align", align == "r" ? "right" : (align == "ctr" ? "center" : "left"));
+                    }
 
                     HtmlNode itemNode = doc.CreateElement(isBullet ? "li" : "div");
                     itemNode.InnerHtml = sbRunText.Length > 0 ? sbRunText.ToString() : text.Trim();
 
                     itemNode.SetAttributeValue("level", level.ToString());
-
-                    if (paragraphAlign == TextHorizontalAlignment.Center)
-                    {
-                        paragraphStyleBulider.Add("text-align:center");
-                    }
 
                     if (paragraphStyleBulider.Count > 0)
                     {
@@ -474,7 +510,20 @@ namespace PowerPointConverter.Converter
                 i++;
             }
 
+            if (isSameAlign)
+            {
+                if (textHAlign == TextHorizontalAlignment.Center)
+                {
+                    styleBuilder.Add("justify-content:center");
+                }
+                else if (textHAlign == TextHorizontalAlignment.Right)
+                {
+                    styleBuilder.Add("justify-content:right");
+                }
+            }
+
             HtmlNode paragraphNode = doc.CreateElement("div");
+            paragraphNode.AddStyle("width:100%");
 
             for (int k = 0; k < itemNodes.Count; k++)
             {
@@ -649,7 +698,7 @@ namespace PowerPointConverter.Converter
             return null;
         }
 
-        private void SetSpacingStyle(StyleBuilder styleBuilder, SpacingPoints? spacingPoints, SpacingPercent? spacingPercent, string name)
+        private void SetSpacingStyle(StyleBuilder styleBuilder, SpacingPoints? spacingPoints, SpacingPercent? spacingPercent, decimal? fontSize, string name)
         {
             string value = "100%";
 
@@ -659,7 +708,9 @@ namespace PowerPointConverter.Converter
             }
             else if (spacingPercent != null && spacingPercent.Val.HasValue)
             {
-                value = ValueHelper.RoundValueByMultiplicationFactor1000(spacingPercent.Val) + "%";
+                var percent = ValueHelper.RoundValueByMultiplicationFactor100000(spacingPercent.Val);
+
+                value = $"{(decimal)percent * (fontSize ?? 0)}px";
             }
 
             styleBuilder.Add(name, $"{value}");
@@ -668,6 +719,11 @@ namespace PowerPointConverter.Converter
         private BooleanValue? GetFontBold(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
         {
             return runProperties?.Bold ?? slideLevelRunProperties?.Bold ?? layoutLevelRunProperties?.Bold ?? masterLevelRunProperties?.Bold;
+        }
+
+        private Int32? GetFontSize(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
+        {
+            return runProperties?.FontSize ?? slideLevelRunProperties?.FontSize ?? layoutLevelRunProperties?.FontSize ?? masterLevelRunProperties?.FontSize;
         }
 
         private BooleanValue? GetFontItalic(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
@@ -758,6 +814,11 @@ namespace PowerPointConverter.Converter
         private LineSpacing? GetLineSpacing(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
         {
             return properties?.LineSpacing ?? slideLevelProperties?.GetFirstChild<LineSpacing>() ?? layoutLevelProperties?.GetFirstChild<LineSpacing>() ?? masterLevelProperties?.GetFirstChild<LineSpacing>();
+        }
+
+        private string? GetAlign(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
+        {
+            return properties?.Alignment ?? slideLevelProperties?.Alignment ?? layoutLevelProperties?.Alignment ?? masterLevelProperties?.Alignment;
         }
     }
 }

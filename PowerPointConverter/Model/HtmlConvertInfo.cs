@@ -3,6 +3,7 @@
     public class HtmlConvertInfo
     {
         public int Index { get; set; }
+        public int Number { get; set; }
         public decimal Width { get; set; }
         public decimal Height { get; set; }
         public string Html { get; set; }
