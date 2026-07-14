@@ -3,16 +3,16 @@ using HtmlAgilityPack;
 using PowerPointConverter.Builder;
 using PowerPointConverter.Extension;
 using PowerPointConverter.Helper;
+using PowerPointConverter.Model;
 using ShapeCrawler;
 using ShapeCrawler.Slides;
-using System.Drawing;
 using A = DocumentFormat.OpenXml.Drawing;
 
 namespace PowerPointConverter.Converter
 {
     public partial class Ppt2Html
     {
-        private void AddTable(TableShape shape, HtmlDocument doc, StyleBuilder styleBuilder, HtmlNode parentNode)
+        private HtmlNode AddTable(TableShape shape, HtmlDocument doc, StyleBuilder styleBuilder)
         {
             var table = shape.Table as ShapeCrawler.Table;
 
@@ -99,7 +99,7 @@ namespace PowerPointConverter.Converter
 
                             if (fill != null)
                             {
-                                var schemeColor = this.GetThemeColor(fill.SchemeColor?.Val);
+                                var schemeColor = StyleHelper.GetThemeColor(fill.SchemeColor?.Val);
 
                                 if (!string.IsNullOrEmpty(schemeColor))
                                 {
@@ -125,46 +125,13 @@ namespace PowerPointConverter.Converter
 
             Action<SolidFill, string> setBgColor = (fill, rowFilter) =>
             {
-                var systemColor = fill.SystemColor;
-                var schemeColor = fill.SchemeColor;
-                A.Tint tint = null;
-                A.Alpha alpha = null;
+                ColorInfo colorInfo = StyleHelper.GetColorInfo(fill);
 
-                string rowColor = null;
-
-                if (systemColor != null)
+                if (colorInfo?.Color != null)
                 {
-                    tint = systemColor.GetFirstChild<A.Tint>();
-                    alpha = systemColor.GetFirstChild<A.Alpha>();
-                    rowColor = systemColor.Val;
-                }
-                else if (schemeColor != null)
-                {
-                    tint = schemeColor.GetFirstChild<A.Tint>();
-                    alpha = schemeColor.GetFirstChild<A.Alpha>();
-                    rowColor = this.GetThemeColor(schemeColor.Val);
-                }
-
-                if (rowColor != null)
-                {
-                    var color = rowColor.StartsWith("#") ? ColorTranslator.FromHtml(rowColor) : System.Drawing.Color.FromName(rowColor);
-
-                    int? alphaValue = null;
-
-                    if (alpha != null)
-                    {
-                        alphaValue = alpha.Val;
-                    }
-                    else if (tint != null)
-                    {
-                        alphaValue = tint.Val;
-                    }
-
-                    string bgColor = ColorHelper.GetRgbStyle(color, ValueHelper.RoundValue((alphaValue ?? 100000) / ValueHelper.MultiplicationFactor100000, 1));
-
                     string filter = rowFilter == null ? "" : $":nth-child({rowFilter})";
 
-                    styleNode.InnerHtml += Environment.NewLine + $"#{tableId} tr{filter}" + "{" + $"background-color:{bgColor}" + "}";
+                    styleNode.InnerHtml += Environment.NewLine + $"#{tableId} tr{filter}" + "{" + $"background-color:{colorInfo.Color}" + "}";
                 }
             };
 
@@ -183,7 +150,7 @@ namespace PowerPointConverter.Converter
 
                     if (color != null)
                     {
-                        string textColor = this.GetThemeColor(color);
+                        string textColor = StyleHelper.GetThemeColor(color);
 
                         if (textColor != null)
                         {
@@ -222,7 +189,7 @@ namespace PowerPointConverter.Converter
                 }
             }
 
-            parentNode.AppendChild(styleNode);
+            doc.DocumentNode.AppendChild(styleNode);
 
             foreach (var column in table.Columns)
             {
@@ -297,7 +264,7 @@ namespace PowerPointConverter.Converter
 
             tableNode.AddStyle(styleBuilder);
 
-            parentNode.AppendChild(tableNode);
+            return tableNode;
         }
     }
 }

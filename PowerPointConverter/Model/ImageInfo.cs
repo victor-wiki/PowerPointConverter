@@ -4,6 +4,8 @@ namespace PowerPointConverter.Model
 {
     public class ImageInfo
     {
+        public string Name { get; set; }
+        public string Mime { get; set; }
         public Stream Stream { get; set; }
         public byte[] Bytes { get; set; }
         public IImage Image { get; set; }
@@ -11,8 +13,10 @@ namespace PowerPointConverter.Model
         public double? ActualHeight { get; set; }
         public double DisplayWidth { get; set; }
         public double DisplayHeight { get; set; }
-        public CropInfo CropInfo { get; set; }
+        public DuotoneInfo DuotoneInfo { get; set; }
         public SkiaSharp.SKPicture Picture { get; set; }
         public bool NeedConvert { get; set; }
+
+        public bool HasContent => this.Bytes != null || this.Stream != null || this.Image != null;
     }
 }

@@ -10,6 +10,54 @@ namespace PowerPointConverter.Helper
         public const int ImageLimitByteArraySize = 100 * 1024;
         public static readonly string[] NeedConvertFileExtensions = { ".emf", ".wdp", ".tiff" };
 
+        public static readonly Dictionary<string, string> MimeMappings = new Dictionary<string, string>()
+        {
+            {"png", "image/png" },
+            {"jpg", "image/jpeg"},
+            {"jpeg", "image/jpeg"},
+            {"gif", "image/gif"},
+            {"svg", "image/svg+xml"},
+            {"bmp", "image/bmp"},
+            {"tiff", "image/tiff"},
+            {"tif", "image/tiff"},
+            {"emf", "image/x-emf"},
+            {"wmf", "image/x-wmf"},
+            {"webp", "image/webp"},
+            {"mp4", "video/mp4"},
+            {"m4v", "video/mp4"},
+            {"webm", "video/webm"},
+            {"avi", "video/x-msvideo"},
+            {"mp3", "audio/mpeg"},
+            {"wav", "audio/wav"},
+            {"m4a", "audio/mp4"},
+            {"ogg", "audio/ogg"},
+        };
+
+        public static string GetMimeType(string type, string fileType)
+        {
+            if (MimeMappings.ContainsKey(fileType))
+            {
+                return MimeMappings[fileType];
+            }
+            else
+            {
+                switch (type)
+                {
+                    case "image":
+                        return "image/png";
+                        break;
+                    case "video":
+                        return "video/mp4";
+                        break;
+                    case "audio":
+                        return "audio/mpeg";
+                        break;
+                }
+            }
+
+            return string.Empty;
+        }
+
         public static int GetImageCompressionPercent(int length)
         {
             if (ImageLimitByteArraySize > length)
@@ -104,9 +152,7 @@ namespace PowerPointConverter.Helper
         {
             if (bytes != null)
             {
-                string str = Convert.ToBase64String(bytes);
-
-                return $"data:image/svg+xml;base64,{str}";
+                return GetBase64StringFromMediaByteArray(bytes, "image", "svg");
             }
 
             return null;
@@ -114,7 +160,7 @@ namespace PowerPointConverter.Helper
 
         public static bool NeedConvertImage(IImage image)
         {
-            string extension = Path.GetExtension(image.Name).ToLower();
+            string extension = System.IO.Path.GetExtension(image.Name).ToLower();
 
             return NeedConvertImage(extension);
         }
@@ -173,7 +219,7 @@ namespace PowerPointConverter.Helper
             return ms;
         }
 
-        public static string GetBase64StringFromImageInfo(ImageInfo imageInfo, bool reduceImageQuality = false)
+        public static byte[] TransferImage(ImageInfo imageInfo, bool reduceImageQuality = false)
         {
             byte[] bytes = imageInfo.Bytes;
             Stream stream = imageInfo.Stream;
@@ -182,6 +228,10 @@ namespace PowerPointConverter.Helper
             if (stream != null)
             {
                 memoryStream = ConvertToMemoryStream(stream);
+            }
+            else if (imageInfo?.Picture != null)
+            {
+                bytes = imageInfo.Picture.Serialize().ToArray();
             }
 
             if (imageInfo.NeedConvert)
@@ -199,104 +249,82 @@ namespace PowerPointConverter.Helper
                 }
             }
 
-            CropInfo cropInfo = imageInfo.CropInfo;
+            DuotoneInfo duotoneInfo = imageInfo.DuotoneInfo;
 
-            double? width = imageInfo.ActualWidth;
-            double? height = imageInfo.ActualHeight;
-
-            if (width.HasValue == false)
+            Func<byte[]> getDefaultValue = () =>
             {
-                var sizeInfo = memoryStream != null ? GetImageSize(memoryStream) : GetImageSize(bytes);
+                if (bytes != null)
+                {
+                    return ConvertImage(bytes, reduceImageQuality);
+                }
+                else if (stream != null)
+                {
+                    return ConvertImage(memoryStream.ToArray(), reduceImageQuality);
+                }
 
-                width = sizeInfo.Width;
-                height = sizeInfo.Height;
-            }
-
-            Func<string> getDefaultValue = () =>
-            {
-                return bytes != null ? GetBase64StringFromImageByteArray(bytes, reduceImageQuality) : GetBase64StringFromImageStream(stream, reduceImageQuality);
+                return null;
             };
 
-            if (width.HasValue == false || imageInfo.DisplayWidth <= 0 || imageInfo.DisplayHeight <= 0)
+            byte[] convertedBytes = ConvertImage(memoryStream != null ? memoryStream.ToArray() : bytes, reduceImageQuality);
+
+            if (duotoneInfo != null)
             {
-                return getDefaultValue();
-            }
+                var color1 = imageInfo.DuotoneInfo.ShadowColor;
+                var color2 = imageInfo.DuotoneInfo.HighlightColor;
+                var c1 = ColorHelper.GetColor(color1.Color).Value;
+                var c2 = ColorHelper.GetColor(color2.Color).Value;
 
-            if (cropInfo != null)
-            {
-                var zoomedWidth = imageInfo.DisplayWidth / (1 - cropInfo.Left - cropInfo.Right);
-                var zoomedHeight = imageInfo.DisplayHeight / (1 - cropInfo.Top - cropInfo.Bottom);
-
-                var scale = zoomedWidth / width;
-
-                var surfaceWidth = (int)zoomedWidth;
-                var surfaceHeight = (int)zoomedWidth;
-
-                if (cropInfo.Left < 0)
+                using (var ms = new MemoryStream(convertedBytes))
                 {
-                    surfaceWidth += (int)((decimal)zoomedWidth * Math.Abs((decimal)cropInfo.Left));
-                }
-
-                if (cropInfo.Right < 0)
-                {
-                    surfaceWidth += (int)((decimal)zoomedWidth * Math.Abs((decimal)cropInfo.Right));
-                }
-
-                if (cropInfo.Top < 0)
-                {
-                    surfaceHeight += (int)((decimal)surfaceHeight * Math.Abs((decimal)cropInfo.Top));
-                }
-
-                if (cropInfo.Bottom < 0)
-                {
-                    surfaceHeight += (int)((decimal)surfaceHeight * Math.Abs((decimal)cropInfo.Bottom));
-                }
-
-                using (var surface = SKSurface.Create(new SKImageInfo(surfaceWidth, surfaceHeight)))
-                {
-                    surface.Canvas.Scale((float)scale, (float)scale);
-
-                    if (imageInfo.Picture != null)
+                    using (var codec = SKCodec.Create(ms))
                     {
-                        surface.Canvas.DrawPicture(imageInfo.Picture);
-                    }
-                    else
-                    {
-                        if (memoryStream != null)
+                        var info = codec.Info;
+
+                        using (var bitmap = new SKBitmap(info.Width, info.Height, true))
                         {
-                            memoryStream.Position = 0;
+                            byte[] pixels = null;
+
+                            codec.GetPixels(out pixels);
+
+                            int bytesPerPixel = bitmap.BytesPerPixel;
+                            int count = pixels.Length / bytesPerPixel;
+
+                            SKColor[] colors = new SKColor[count]; 
+
+                            Parallel.For(0, count - 1, index =>
+                            {
+                                var i = index * bytesPerPixel;
+                                var b = pixels[i];
+                                var g = pixels[i + 1];
+                                var r = pixels[i + 2];
+
+                                double normalizedGray = (r * 0.299 + g * 0.587 + b * 0.114) / 255.0;
+
+                                var r2 = (byte)(c1.R + (c2.R - c1.R) * normalizedGray);
+                                var g2 = (byte)(c1.G + (c2.G - c1.G) * normalizedGray);
+                                var b2 = (byte)(c1.B + (c2.B - c1.B) * normalizedGray);
+
+                                pixels[i] = b2;
+                                pixels[i + 1] = g2;
+                                pixels[i + 2] = r2;
+
+                                colors[index] = new SKColor(r2, g2, b2);
+                            });
+
+                            bitmap.Pixels = colors;
+
+                            using (var image = SKImage.FromBitmap(bitmap))
+                            {
+                                using (var data = image.Encode(GetImageFormat(imageInfo), 100))
+                                {
+                                    byte[] imageBytes = data.ToArray();
+
+                                    return imageBytes;
+                                }
+                            }
                         }
-
-                        SKImage img = bytes != null ? SKImage.FromEncodedData(bytes) : SKImage.FromEncodedData(memoryStream);
-
-                        if (img == null)
-                        {
-                            return getDefaultValue();
-                        }
-
-                        surface.Canvas.DrawImage(img, new SKPoint(0, 0));
                     }
-
-                    SKImage snapshot = surface.Snapshot();
-
-                    int clipLeft = (int)(zoomedWidth * cropInfo.Left);
-                    int clipTop = (int)(zoomedHeight * cropInfo.Top);
-                    int clipRight = (int)(imageInfo.DisplayWidth + clipLeft);
-                    int clipBottom = (int)(imageInfo.DisplayHeight + clipTop);
-
-                    SKRectI rect = new SKRectI(clipLeft, clipTop, clipRight, clipBottom);
-
-                    var subImgage = snapshot.Subset(rect);
-
-                    if (subImgage == null)
-                    {
-                        return getDefaultValue();
-                    }
-
-                    SKData data = subImgage.Encode(SKEncodedImageFormat.Png, 100);
-
-                    return GetBase64StringFromImageByteArray(data.ToArray(), reduceImageQuality);
-                }
+                }                
             }
             else
             {
@@ -304,7 +332,44 @@ namespace PowerPointConverter.Helper
             }
         }
 
-        public static string GetBase64StringFromMediaByteArray(Stream stream, string type, string fileType)
+        public static SKEncodedImageFormat GetImageFormat(ImageInfo info)
+        {
+            string name = info.Name;
+            string mime = info.Mime;
+
+            string fileType = null;
+
+            if (!string.IsNullOrEmpty(name))
+            {
+                fileType = System.IO.Path.GetExtension(name).Replace(".", "");
+            }
+            else if (!string.IsNullOrEmpty(mime))
+            {
+                fileType = MimeMappings.ContainsValue(mime) ? MimeMappings.FirstOrDefault(item => item.Value == mime).Key : null;
+            }
+
+            if (fileType != null)
+            {
+                switch (fileType)
+                {
+                    case "png":
+                        return SKEncodedImageFormat.Png;
+                    case "jpg":
+                    case "jpeg":
+                        return SKEncodedImageFormat.Jpeg;
+                    case "gif":
+                        return SKEncodedImageFormat.Gif;
+                    case "bmp":
+                        return SKEncodedImageFormat.Bmp;             
+                    case "webp":
+                        return SKEncodedImageFormat.Webp;             
+                }
+            }
+
+            return SKEncodedImageFormat.Png;
+        }
+
+        public static string GetBase64StringFromMediaStream(Stream stream, string type, string fileType)
         {
             using (MemoryStream ms = ConvertToMemoryStream(stream))
             {
@@ -314,9 +379,11 @@ namespace PowerPointConverter.Helper
 
         public static string GetBase64StringFromMediaByteArray(byte[] data, string type, string fileType)
         {
-            string base64 = Convert.ToBase64String(data);
+            string base64String = Convert.ToBase64String(data);
 
-            string blobUrl = $"data:{type}/{fileType};base64,{base64}";
+            string mimeType = GetMimeType(type, fileType);
+
+            string blobUrl = $"data:{mimeType};base64,{base64String}";
 
             return blobUrl;
         }

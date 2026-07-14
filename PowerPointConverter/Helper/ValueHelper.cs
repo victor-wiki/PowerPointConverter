@@ -11,12 +11,7 @@ namespace PowerPointConverter.Helper
         public static double RoundValue(double value, int roundNumber = 2)
         {
             return Math.Round(value, roundNumber);
-        }
-
-        public static decimal RoundValue(decimal value, int roundNumber = 2)
-        {
-            return Math.Round(value, roundNumber);
-        }
+        }      
 
         public static double RoundValueByMultiplicationFactor100(double value, int roundNumber = 2)
         {
@@ -33,34 +28,34 @@ namespace PowerPointConverter.Helper
             return Math.Round(value / MultiplicationFactor100000, roundNumber);
         }
 
-        public static decimal GetEmusPixelsValue(long value)
+        public static double GetEmusPixelsValue(long value)
         {
             return new Emus(value).AsPixels();
         }
 
-        public static decimal GetEmusPointsValue(long value)
+        public static double GetEmusPointsValue(long value)
         {
             return new Emus(value).AsPoints();
         }
 
-        public static decimal RoundValueByEmusPoints(long value, int roundNumber = 2)
+        public static double RoundValueByEmusPoints(long value, int roundNumber = 2)
         {
             return ValueHelper.RoundValue(GetEmusPointsValue(value), roundNumber);
         }
 
-        public static decimal RoundValueByEmusPixels(long value, int roundNumber = 2)
+        public static double RoundValueByEmusPixels(long value, int roundNumber = 2)
         {
             return ValueHelper.RoundValue(GetEmusPixelsValue(value), roundNumber);
         }
 
-        public static decimal PointsValueToPixelsValue(decimal value, int roundNumber = 2)
+        public static double PointsValueToPixelsValue(double value, int roundNumber = 2)
         {
-            return Math.Round(value * 12700m / 9525m, roundNumber);
+            return Math.Round(value * 12700 / 9525, roundNumber);
         }
 
-        public static decimal PixelsValueToPointsValue(decimal value, int roundNumber = 2)
+        public static double PixelsValueToPointsValue(double value, int roundNumber = 2)
         {
-            return Math.Round(value * 9525m / 12700m , roundNumber);
+            return Math.Round(value * 9525 / 12700 , roundNumber);
         }
     }
 }

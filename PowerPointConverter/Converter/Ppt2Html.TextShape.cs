@@ -7,10 +7,10 @@ using PowerPointConverter.Helper;
 using PowerPointConverter.Model;
 using ShapeCrawler;
 using ShapeCrawler.Slides;
-using System.Text;
+using System.Text.RegularExpressions;
 using A = DocumentFormat.OpenXml.Drawing;
+using O = DocumentFormat.OpenXml.Office.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
-using S = ShapeCrawler.Shapes;
 
 namespace PowerPointConverter.Converter
 {
@@ -18,99 +18,156 @@ namespace PowerPointConverter.Converter
     {
         public HtmlNode CreateTextShapeNode(IShape shape, IShape layoutShape, StyleBuilder styleBuilder, HtmlDocument doc)
         {
-            P.Shape ps = (shape as S.Shape).OpenXmlElement as P.Shape;
-            P.Shape lps = (layoutShape as S.Shape)?.OpenXmlElement as P.Shape;
+            P.Shape ps = shape.OpenXmlElement as P.Shape;
 
-            var txt = shape.TextBox;
-            decimal leftMargin = txt.LeftMargin;
-            decimal rightMargin = txt.RightMargin;
-            decimal topMargin = txt.TopMargin;
-            decimal bottomMargin = txt.BottomMargin;
+            ShapeCustomInfo info = ObjectHelper.GetObjectFromJson<ShapeCustomInfo>(shape.CustomData);
 
-            styleBuilder.Add($"z-index:1;margin-left:{leftMargin}px;margin-top:{topMargin}px;margin-right:{rightMargin}px;margin-bottom:{bottomMargin}px");
-
-            TextVerticalAlignment? textVAlign = default(TextVerticalAlignment?);
-            TextHorizontalAlignment? textHAlign = default(TextHorizontalAlignment?);
-            var wordWrap = txt.TextWrapped;
-            bool isTitle = shape.PlaceholderType == PlaceholderType.Title;
-            bool isFooter = shape.PlaceholderType == PlaceholderType.Footer;
-            bool isSlideNumber = shape.PlaceholderType == PlaceholderType.SlideNumber;
-            Geometry? geometry = shape.GeometryType;
-
-            if (this.masterTextStyle == null)
+            if (!(info?.IsOutlineParsed == true))
             {
-                this.masterTextStyle = this.presentation.GetSdkPresentationDocument().PresentationPart.SlideMasterParts.FirstOrDefault()?.SlideMaster?.TextStyles;
+                var outline = shape.Outline as SlideShapeOutline;
+
+                this.SetOutlineAsBorderStyle(outline, styleBuilder);
             }
 
-            P.TextListStyleType masterListStyle = isTitle ? this.masterTextStyle?.TitleStyle : this.masterTextStyle?.BodyStyle;
-            var layoutListStyle = (layoutShape as S.Shape)?.OpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
-            var slideListStyle = (shape as S.Shape).OpenXmlElement.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
+            TextBodyInfo textBody = new TextBodyInfo()
+            {
+                BodyProperties = ps.TextBody.BodyProperties,
+                Paragraphs = ps.TextBody.Elements<A.Paragraph>(),
+                ListStyle = ps.TextBody.GetFirstChild<A.ListStyle>()
+            };
+
+            ShapeInfo shapeInfo = new ShapeInfo()
+            {
+                OpenXmlElement = shape.OpenXmlElement,
+                PlaceholderType = shape.PlaceholderType,
+                GeometryType = shape.GeometryType
+            };
+
+            ShapeInfo layoutShapeInfo = layoutShape == null ? null : new ShapeInfo()
+            {
+                OpenXmlElement = layoutShape.OpenXmlElement,
+                PlaceholderType = layoutShape.PlaceholderType,
+                GeometryType = layoutShape.GeometryType
+            };
+
+            HtmlNode node = this.CreateTextShapeNode(textBody, shapeInfo, layoutShapeInfo, styleBuilder, doc);
+
+            return node;
+        }
+
+        public HtmlNode CreateTextShapeNode(TextBodyInfo textBody, ShapeInfo shape, ShapeInfo layoutPlaceholderShape, StyleBuilder styleBuilder, HtmlDocument doc)
+        {
+            var ps = shape.OpenXmlElement;
+            var lps = layoutPlaceholderShape?.OpenXmlElement;
+            var mps = layoutPlaceholderShape != null ? this.GetMasterPlaceholderShape(layoutPlaceholderShape.OpenXmlElement, this.masterSlide) : null;
+
+            A.BodyProperties bodyProperties = textBody.BodyProperties;
+            Geometry? geometry = shape?.GeometryType;
+
+            double leftMargin = this.GetMarginValue(bodyProperties.LeftInset?.Value, false);
+            double rightMargin = this.GetMarginValue(bodyProperties.RightInset?.Value, false);
+            double topMargin = this.GetMarginValue(bodyProperties.TopInset?.Value, true);
+            double bottomMargin = this.GetMarginValue(bodyProperties.BottomInset?.Value,true);
+
+            HtmlNode containerNode = doc.CreateElement("div");
+
+            styleBuilder.Add(CssName.zIndex, "1");
 
             if (geometry == Geometry.Ellipse)
             {
                 styleBuilder.AddCircleStyle();
             }
 
-            var outline = shape.Outline as SlideShapeOutline;
+            containerNode.AddStyle(styleBuilder);
 
-            this.SetOutlineAsBorderStyle(styleBuilder, outline);
+            StyleBuilder sbText = new StyleBuilder();
 
-            if (wordWrap)
+            sbText.Add($"position:absolute;left:0px;top:0px;width:100%;height:100%;{CssName.paddingLeft}:{leftMargin}px;{CssName.paddingTop}:{topMargin}px;{CssName.paddingRight}:{rightMargin}px;{CssName.paddingBottom}:{bottomMargin}px");
+
+            sbText.Add(CssName.boxSizing, "border-box");
+
+            A.TextAnchoringTypeValues? textVAlign = default(TextAnchoringTypeValues?);
+            TextHorizontalAlignment? textHAlign = default(TextHorizontalAlignment?);
+            var wordWrap = bodyProperties.GetAttributes()?.FirstOrDefault(a => a.LocalName == "wrap");
+            bool isWordWrap = wordWrap != null && wordWrap.Value.Value != "none";
+            bool isTitle = shape?.PlaceholderType == PlaceholderType.Title;
+            bool isFooter = shape?.PlaceholderType == PlaceholderType.Footer;
+            bool isBody = mps!=null? OpenXmlHelper.IsBody(mps):( lps != null ? OpenXmlHelper.IsBody(lps) : OpenXmlHelper.IsBody(ps));
+            bool isSlideNumber = shape?.PlaceholderType == PlaceholderType.SlideNumber;
+            var fontRef = (ps is P.Shape) ? (ps.GetFirstChild<P.ShapeStyle>()?.GetFirstChild<A.FontReference>())
+                          : ps.GetFirstChild<O.ShapeStyle>()?.GetFirstChild<A.FontReference>();
+            var fontRefColor = fontRef != null ? StyleHelper.GetColorInfo(fontRef) : null;
+
+            var paragraphs = textBody.Paragraphs;
+
+            if (this.defaultTextStyle != null)
             {
-                styleBuilder.Add("word-wrap", "break-word");
+                this.defaultTextStyle = this.presentation.PresDocument.PresentationPart.Presentation.DefaultTextStyle;
             }
 
-            ITextBox layoutTextBox = null;
-
-            if (layoutShape != null)
+            if (this.masterTextStyle == null)
             {
-                layoutTextBox = layoutShape.TextBox;
+                this.masterTextStyle = this.presentation.GetSdkPresentationDocument().PresentationPart.SlideMasterParts.FirstOrDefault()?.SlideMaster?.TextStyles;
             }
 
-            #region Align
-            P.TextBody? tb = ps.TextBody;
+            P.TextListStyleType masterListStyle = isTitle ? this.masterTextStyle?.TitleStyle : (isBody ? this.masterTextStyle?.BodyStyle : this.masterTextStyle?.OtherStyle);
+            var layoutPlaceholderListStyle = lps == null ? null : lps.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
+            var masterPlaceholderListStyle = mps == null ? null : mps.GetFirstChild<P.TextBody>()?.GetFirstChild<A.ListStyle>();
+            var shapeListStyle = textBody.ListStyle;
 
-            var aBodyPr = tb.GetFirstChild<A.BodyProperties>();
+            if (isWordWrap)
+            {
+                sbText.Add(CssName.wordBreak, "break-word");
+            }
 
-            if (aBodyPr?.Anchor == null)
+            TextBodyInfo layoutTextBox = null;
+
+            if (layoutPlaceholderShape != null)
+            {
+                layoutTextBox = lps.GetTextBody();
+            }
+
+            #region Align    
+
+            if (bodyProperties?.Anchor == null)
             {
                 if (layoutTextBox != null)
                 {
-                    var layoutShapeAnchor = lps.TextBody?.BodyProperties?.Anchor;
+                    var layoutShapeAnchor = layoutTextBox?.BodyProperties?.Anchor;
 
                     if (layoutShapeAnchor == null)
                     {
-                        int level = txt.Paragraphs?.FirstOrDefault()?.IndentLevel ?? 1;
+                        int level = paragraphs?.FirstOrDefault()?.ParagraphProperties?.Level ?? 1;
 
-                        A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutListStyle);
+                        A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutPlaceholderListStyle);
 
                         var align = layoutLevelProperties?.Alignment;
 
                         if (align == "ctr")
                         {
-                            textVAlign = TextVerticalAlignment.Middle;
+                            textVAlign = A.TextAnchoringTypeValues.Center;
                         }
                         else if (align == "b")
                         {
-                            textVAlign = TextVerticalAlignment.Bottom;
+                            textVAlign = A.TextAnchoringTypeValues.Bottom;
                         }
                     }
                     else
                     {
-                        textVAlign = layoutTextBox.VerticalAlignment;
+                        textVAlign = layoutTextBox?.BodyProperties?.Anchor.Value;
                     }
                 }
             }
             else
             {
-                textVAlign = shape.TextBox.VerticalAlignment;
+                textVAlign = ps.GetTextBody()?.BodyProperties?.Anchor?.Value;
             }
 
-            if (aBodyPr?.AnchorCenter == null)
+            if (bodyProperties?.AnchorCenter == null)
             {
                 if (layoutTextBox != null)
                 {
-                    var aBodyPr2 = (layoutShape as S.Shape).OpenXmlElement.GetFirstChild<A.BodyProperties>();
+                    var aBodyPr2 = lps.GetFirstChild<A.BodyProperties>();
 
                     if (aBodyPr2?.AnchorCenter?.Value == true)
                     {
@@ -120,7 +177,7 @@ namespace PowerPointConverter.Converter
             }
             else
             {
-                if (aBodyPr?.AnchorCenter?.Value == true)
+                if (bodyProperties?.AnchorCenter?.Value == true)
                 {
                     textHAlign = TextHorizontalAlignment.Center;
                 }
@@ -128,16 +185,16 @@ namespace PowerPointConverter.Converter
 
             if (!textVAlign.HasValue)
             {
-                textVAlign = TextVerticalAlignment.Top;
+                textVAlign = A.TextAnchoringTypeValues.Top;
             }
 
             if (!textHAlign.HasValue)
             {
                 if (layoutTextBox != null)
                 {
-                    int level = txt.Paragraphs?.FirstOrDefault()?.IndentLevel ?? 1;
+                    int level = paragraphs?.FirstOrDefault()?.ParagraphProperties?.Level ?? 1;
 
-                    A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutListStyle);
+                    A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutPlaceholderListStyle);
 
                     var align = layoutLevelProperties?.Alignment;
 
@@ -152,146 +209,389 @@ namespace PowerPointConverter.Converter
                 }
             }
 
-            if (textVAlign == TextVerticalAlignment.Middle || textVAlign == TextVerticalAlignment.Bottom
+            if (textVAlign == A.TextAnchoringTypeValues.Center || textVAlign == A.TextAnchoringTypeValues.Bottom
                 || textHAlign == TextHorizontalAlignment.Center || textHAlign == TextHorizontalAlignment.Right)
             {
-                styleBuilder.Add("display:flex");
+                sbText.Add("display:flex");
             }
 
-            if (textVAlign == TextVerticalAlignment.Middle)
+            if (textVAlign == A.TextAnchoringTypeValues.Center)
             {
-                styleBuilder.Add("align-items:center");
+                sbText.Add(CssName.alignItems, "center");
             }
-            else if (textVAlign == TextVerticalAlignment.Bottom)
+            else if (textVAlign == A.TextAnchoringTypeValues.Bottom)
             {
-                styleBuilder.Add("align-items:end");
+                sbText.Add(CssName.alignItems, "end");
             }
 
             #endregion
-
-            var paragraphs = txt.Paragraphs;
 
             var paragraphContainerNode = doc.CreateElement("div");
 
             List<HtmlNode> itemNodes = new List<HtmlNode>();
             Dictionary<int, ParagraphItemInfo> dictParagraphItemInfo = new Dictionary<int, ParagraphItemInfo>();
 
+            Dictionary<int, int> dictBulletAutoNumberStartAt = new Dictionary<int, int>();
+            Dictionary<int, int> dictBulletAutoNumberCounter = new Dictionary<int, int>();
+
             int i = 0;
             string lastAlign = null;
             bool isSameAlign = true;
 
-            foreach (ShapeCrawler.Paragraph p in paragraphs)
+            foreach (var p in paragraphs)
             {
-                int level = p.IndentLevel;
+                int level = (p.ParagraphProperties?.Level?.Value ?? 0) + 1;
+
                 bool lastItemIsLineBreak = false;
                 A.TextParagraphPropertiesType properties = null;
-                A.TextParagraphPropertiesType slideLevelProperties = this.GetParagraphPropertiesByLevel(level, slideListStyle);
-                A.TextParagraphPropertiesType layoutLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutListStyle);
+                A.TextParagraphPropertiesType presentationLevelProperties = this.GetParagraphPropertiesByLevel(level, this.defaultTextStyle);
                 A.TextParagraphPropertiesType masterLevelProperties = this.GetParagraphPropertiesByLevel(level, masterListStyle);
+                A.TextParagraphPropertiesType masterPlaceholderLevelProperties = this.GetParagraphPropertiesByLevel(level, masterPlaceholderListStyle);
+                A.TextParagraphPropertiesType layoutPlaceholderLevelProperties = this.GetParagraphPropertiesByLevel(level, layoutPlaceholderListStyle);
+                A.TextParagraphPropertiesType shapeLevelProperties = this.GetParagraphPropertiesByLevel(level, shapeListStyle);
 
-                string text = p.Text;
+                TextStyle textStyle = new TextStyle();
 
-                string fontColor = ColorHelper.GetHexColor(p.FontColor);
-                decimal? fontSize = null;
+                this.MergeTextStyle(textStyle, presentationLevelProperties);
+                this.MergeTextStyle(textStyle, masterLevelProperties);
+                this.MergeTextStyle(textStyle, masterPlaceholderLevelProperties);
+                this.MergeTextStyle(textStyle, layoutPlaceholderLevelProperties);
+                this.MergeTextStyle(textStyle, shapeLevelProperties);
+                this.MergeTextStyle(textStyle, p.ParagraphProperties);
 
-                var children = p.SdkOpenXmlElement.ChildElements;
+                var presentationDefaultRunProperties = presentationLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
+                var masterDefaultRunProperties = masterLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
+                var masterPlaceholderDefaultRunProperties = masterPlaceholderLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
+                var layoutPlaceholderDefaultRunProperties = layoutPlaceholderLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
+                var shapeLevelDefaultRunProperties = shapeLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
+                var paragraphDefaultRunProperties = p.ParagraphProperties?.GetFirstChild<A.DefaultRunProperties>();
 
-                StringBuilder sbRunText = new StringBuilder();
+                TextStyle runDefaultTextStyle = new TextStyle();
 
-                #region Subitem
+                this.MergeDefaultRunTextStyle(runDefaultTextStyle, presentationDefaultRunProperties);
+                this.MergeDefaultRunTextStyle(runDefaultTextStyle, masterDefaultRunProperties);
+                this.MergeDefaultRunTextStyle(runDefaultTextStyle, masterPlaceholderDefaultRunProperties);
+                this.MergeDefaultRunTextStyle(runDefaultTextStyle, layoutPlaceholderDefaultRunProperties);
+                this.MergeDefaultRunTextStyle(runDefaultTextStyle, shapeLevelDefaultRunProperties);
+                this.MergeDefaultRunTextStyle(runDefaultTextStyle, paragraphDefaultRunProperties);
 
-                int j = 0;
+                StyleBuilder sbParagraph = new StyleBuilder();
 
+                string alignment = null;
+
+                if (textStyle.Alignment != null)
+                {
+                    switch (textStyle.Alignment)
+                    {
+                        case "l":
+                            alignment = "left";
+                            break;
+                        case "ctr":
+                            alignment = "center";
+                            break;
+                        case "r":
+                            alignment = "right";
+                            break;
+                        case "just":
+                        case "justLow":
+                        case "dist":
+                        case "thaiDist":
+                            alignment = "justify";
+                            break;
+                        default:
+                            alignment = "left";
+                            break;
+                    }
+
+                    if (alignment != null)
+                    {
+                        sbParagraph.Add(CssName.textAlign, alignment);
+                    }
+                }
+
+                if (textStyle.RightToLeft)
+                {
+                    sbParagraph.Add("direction", textStyle.RightToLeft ? "rtl" : "ltr");
+                }
+
+                if (textStyle.MarginLeft != null)
+                {
+                    sbParagraph.Add(CssName.paddingLeft, $"{textStyle.MarginLeft}px");
+                }
+
+                if (textStyle.LineHeight != null)
+                {
+                    sbParagraph.Add(CssName.lineHeight, textStyle.LineHeight);
+                }
+
+                if (textStyle.Indent != null)
+                {
+                    sbParagraph.Add(CssName.textIndent, $"{textStyle.Indent}px");
+                }
+
+                if (textStyle.FontFamily != null)
+                {
+                    sbParagraph.Add(CssName.fontFamily, textStyle.FontFamily);
+                }
+
+                double? fontSize = 12d;
+
+                if (runDefaultTextStyle.FontSize.HasValue)
+                {
+                    fontSize = runDefaultTextStyle.FontSize.Value;
+                }
+
+                List<A.Run> runs = p.ChildElements.Where(item => item is A.Run).Select(item => item as A.Run).ToList();
+
+                if (runs.Count > 0 && runs[0].RunProperties != null)
+                {
+                    var sz = runs[0].RunProperties.FontSize;
+
+                    if (sz != null)
+                    {
+                        fontSize = ValueHelper.RoundValueByMultiplicationFactor100(sz.Value);
+                    }
+                }
+                else if (runs.Count == 0)
+                {
+                    A.EndParagraphRunProperties endParagraphRunProperties = p.GetFirstChild<A.EndParagraphRunProperties>();
+
+                    if (endParagraphRunProperties != null)
+                    {
+                        var sz = endParagraphRunProperties.FontSize;
+
+                        if (sz != null)
+                        {
+                            fontSize = ValueHelper.RoundValueByMultiplicationFactor100(sz.Value);
+                        }
+                    }
+                }
+
+                sbParagraph.Add(CssName.fontSize, $"{fontSize}px");
+
+                if (textStyle.SpaceBeforePoints != null)
+                {
+                    sbParagraph.Add(CssName.marginTop, $"{textStyle.SpaceBeforePoints}px");
+                }
+                else if (textStyle.SpaceBeforePercent != null)
+                {
+                    sbParagraph.Add(CssName.marginTop, $"{textStyle.SpaceBeforePercent * fontSize}px");
+                }
+
+                if (textStyle.SpaceAfterPoints != null)
+                {
+                    sbParagraph.Add(CssName.marginBottom, $"{textStyle.SpaceAfterPoints}px");
+                }
+                else if (textStyle.SpaceAfterPercent != null)
+                {
+                    sbParagraph.Add(CssName.marginBottom, $"{textStyle.SpaceAfterPercent * fontSize}px");
+                }
+
+                string text = p.InnerText;
+
+                List<HtmlNode> runNodes = new List<HtmlNode>();
+
+                #region Subitem 
+
+                var children = p.ChildElements;
                 foreach (var child in children)
                 {
                     if (child is A.Run run)
                     {
                         lastItemIsLineBreak = false;
 
+                        var runStyle = ObjectHelper.CloneObject<TextStyle>(runDefaultTextStyle);
+
+                        this.MergeDefaultRunTextStyle(runStyle, run.RunProperties);
+
                         var runProperties = run.GetFirstChild<A.RunProperties>();
-                        var slideLevelRunProperties = slideLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
-                        var layoutLevelRunProperties = layoutLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
-                        var masterLevelRunProperties = masterLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
 
-                        Int32? size = this.GetFontSize(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
-                        BooleanValue? bold = this.GetFontBold(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
-                        BooleanValue? italic = this.GetFontItalic(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
-                        string underline = this.GetFontUnderline(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
-                        string strike = this.GetFontStrike(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
-                        Int32Value? spacing = this.GetLetterSpacing(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
-                        SolidFill fill = this.GetFontSolidFill(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
-                        HyperlinkOnClick hyperLink = this.GetFontHyperlinkOnClick(runProperties, slideLevelRunProperties, layoutLevelRunProperties, masterLevelRunProperties);
+                        StyleBuilder sbItem = new StyleBuilder();
 
-                        StyleBuilder itemStyleBuilder = new StyleBuilder();
+                        double? size = runStyle.FontSize;
+                        string fontFamily = runStyle.FontFamily;
+                        bool bold = runStyle.IsBold;
+                        bool italic = runStyle.IsItalic;
+                        bool strike = runStyle.IsStrike;
+                        bool underline = runStyle.IsUnderline;
+                        string color = runStyle.Color;
+                        string highlightColor = runStyle.HighlightColor;
+                        double? letterSpacing = runStyle.LetterSpacingPoints;
+                        string underlineColor = runStyle.UnderlineColor;
+                        bool underlineFollowsText = runStyle.UnderlineFollowsText;
+                        string textShadow = runStyle.TextShadow;
+                        double? kern = runStyle.Kern;
+                        string capital = runStyle.Capital;
 
                         #region Font Style
                         if (size.HasValue)
                         {
-                            itemStyleBuilder.Add($"font-size:{ValueHelper.RoundValueByMultiplicationFactor100(size.Value)}px");
-
-                            if (i == 0 && j == 0)
-                            {
-                                fontSize = size.Value;
-                                j++;
-                            }
+                            sbItem.Add(CssName.fontSize, $"{size.Value}px");
                         }
 
-                        if (bold?.Value == true)
+                        if (fontFamily != null)
                         {
-                            itemStyleBuilder.Add("font-weight:bold");
+                            sbParagraph.Add(CssName.fontFamily, fontFamily);
                         }
 
-                        if (italic?.Value == true)
+                        if (bold)
                         {
-                            itemStyleBuilder.Add("font-style:italic");
+                            sbItem.Add(CssName.fontWeight, "bold");
                         }
 
-                        if (strike == "sngStrike")
+                        if (italic)
                         {
-                            itemStyleBuilder.Add("text-decoration:line-through");
+                            sbItem.Add(CssName.fontStyle, "italic");
                         }
 
-                        if (underline == "sng")
+                        if (underline)
                         {
-                            itemStyleBuilder.Add("text-decoration:underline");
+                            sbItem.Append(CssName.textDecoration, "underline");
                         }
 
-                        if (spacing != null && spacing > 0)
+                        if (strike)
                         {
-                            itemStyleBuilder.Add("letter-spacing", $"{ValueHelper.RoundValueByMultiplicationFactor100(spacing.Value)}px");
+                            sbItem.Append(CssName.textDecoration, "line-through");
                         }
 
-                        if (hyperLink != null)
+                        if (letterSpacing != null)
                         {
-                            itemStyleBuilder.Add("color:blue;text-decoration:underline");
+                            sbItem.Add(CssName.letterSpacing, $"{letterSpacing.Value}px");
+                        }
+
+                        if (capital == "all")
+                        {
+                            sbItem.Add(CssName.textTransform, "uppercase");
+                        }
+                        else if (capital == "small")
+                        {
+                            sbItem.Add(CssName.fontVariant, "small-caps");
                         }
                         #endregion
 
                         #region Font Color
-                        if (fill != null)
+                        var runColorKind = StyleHelper.GetTextRunColorKind(run.RunProperties);
+                        var hasExplicitRunColor = runColorKind != null;
+
+                        string effectiveColor = null;
+
+                        if (fontRefColor?.Color != null)
                         {
-                            if (!itemStyleBuilder.Contains("color"))
-                            {
-                                this.SetFillStyle(itemStyleBuilder, fill, false);
-                            }
+                            effectiveColor = hasExplicitRunColor ? color : fontRefColor.Color;
+                        }
+                        else
+                        {
+                            effectiveColor = color;
+                        }
+
+                        if (effectiveColor == null)
+                        {
+                            effectiveColor = textStyle.Color;
+                        }
+
+                        if (effectiveColor != null)
+                        {
+                            sbItem.Add("color", effectiveColor);
                         }
                         #endregion
 
-                        HtmlNode spanNode = doc.CreateElement("span");
-
-                        if (itemStyleBuilder.Count > 0)
+                        if (highlightColor != null)
                         {
-                            spanNode.AddStyle(itemStyleBuilder);
+                            sbItem.Add(CssName.backgroundColor, highlightColor);
                         }
 
-                        spanNode.InnerHtml = run.InnerText.Replace(" ", "&nbsp;").Replace(Environment.NewLine, "<br/>");
+                        if (underlineFollowsText && color != null)
+                        {
+                            sbItem.Add(CssName.textDecorationColor, color);
+                        }
 
-                        sbRunText.Append(spanNode.OuterHtml);
+                        if (underlineColor != null)
+                        {
+                            sbItem.Add(CssName.textDecorationColor, underlineColor);
+                        }
+
+                        if (textShadow != null)
+                        {
+                            sbItem.Add(CssName.textShadow, textShadow);
+                        }
+
+                        string textGradientCss = runDefaultTextStyle.GradientFillCss;
+                        string textPatternCss = runDefaultTextStyle.PatternFillCss;
+                        bool textNoFill = runDefaultTextStyle.IsTextNoFill;
+                        double? outlineWidth = runDefaultTextStyle.OutlineWidth;
+                        string outlineGradientCss = runDefaultTextStyle.OutlineGradientCss;
+                        string outlineColor = runDefaultTextStyle.OutlineColor;
+
+                        if (textGradientCss != null)
+                        {
+                            sbItem.Add("background", textGradientCss);
+                        }
+                        if (textPatternCss != null)
+                        {
+                            sbItem.Add(CssName.backgroundImage, textGradientCss);
+                        }
+
+                        if (textNoFill || outlineWidth != null)
+                        {
+                            var strokeWidth = outlineWidth ?? 0.75;
+
+                            if (textNoFill && outlineGradientCss != null)
+                            {
+                                outlineColor = "#ffffff";
+                                sbItem.AddColor("transparent");
+
+                                sbItem.Add(CssName.webkitTextStrokeWidth, $"{strokeWidth}px");
+                                sbItem.Add(CssName.webkitTextStrokeColor, outlineColor);
+                                sbItem.Add(CssName.paintOrder, "stroke fill");
+
+                                var maskGrad = outlineGradientCss;
+                                sbItem.Add(CssName.maskImage, maskGrad);
+
+                                sbItem.Add(CssName.webkitMaskImage, maskGrad);
+                            }
+                            else if (textNoFill && outlineColor != null)
+                            {
+                                sbItem.AddColor("transparent");
+
+                                sbItem.Add(CssName.webkitTextStrokeWidth, $"{strokeWidth}px");
+                                sbItem.Add(CssName.webkitTextStrokeColor, outlineColor);
+                                sbItem.Add(CssName.paintOrder, "stroke fill");
+                            }
+                            else if (textNoFill)
+                            {
+                                sbItem.AddColor("transparent");
+                            }
+                            else if (outlineColor != null)
+                            {
+                                sbItem.Add(CssName.webkitTextStrokeWidth, $"{strokeWidth}px");
+
+                                sbItem.Add(CssName.webkitTextStrokeColor, outlineColor);
+
+                                sbItem.Add(CssName.paintOrder, "stroke fill");
+                            }
+                        }
+
+                        HtmlNode spanNode = doc.CreateElement("span");
+
+                        if (sbItem.Count > 0)
+                        {
+                            spanNode.AddStyle(sbItem);
+                        }
+
+                        spanNode.InnerHtml = Regex.Replace(run.InnerText
+                            .Replace("&", "&amp;")
+                            .Replace("<", "&lt;")
+                            .Replace(">", "&gt;")
+                            //.Replace(" ", "&nbsp;")
+                            .Replace(Environment.NewLine, "<br/>"), @" {2}", " \u00a0");
+
+                        runNodes.Add(spanNode);
                     }
                     else if (child is A.Break)
                     {
-                        HtmlNode breakNode = doc.CreateElement("br");
-                        sbRunText.Append(breakNode.OuterHtml);
+                        var breakNode = doc.CreateElement("br");
+
+                        runNodes.Add(breakNode);
 
                         lastItemIsLineBreak = true;
                     }
@@ -299,34 +599,33 @@ namespace PowerPointConverter.Converter
                     {
                         properties = pProperity;
                     }
+                    else if(child is A.EndParagraphRunProperties)
+                    {
+                        if(lastItemIsLineBreak)
+                        {
+                            HtmlNode endNode = doc.CreateElement("div");
+
+                            endNode.InnerHtml = "\u200B";
+
+                            endNode.AddStyle("overflow:visible");
+
+                            runNodes.Add(endNode);
+                        }                       
+                    }
                 }
                 #endregion
-
-                var portion = p.Portions.FirstOrDefault();
 
                 #region Bullet
                 bool isBullet = false;
                 string bulletType = null;
                 bool isAutoNumber = false;
-                A.CharacterBullet bulletCharacter = null;
-                A.BulletFont bulletFont = null;
-                A.BulletColor bulletColor = null;
-                A.BulletSizePercentage bulletSizePercentage = null;
-                A.AutoNumberedBullet autoNumber = null;
-
-                string bulletColorValue = null;
-                string bulletSizePercentageValue = null;
-                Int32Value? marginLeft = null;
-                Int32Value? marginRight = null;
-                Int32Value? indent = null;
-                bool useMasterProperty = false;
+                string bulletChar = textStyle.BulletChar;
+                string bulletFontName = textStyle.BulletFontName;
+                string bulletColor = textStyle.BulletColor;
+                double? bulletSizePercent = textStyle.BulletSizePercent;
+                double? bulletSizePoints = textStyle.BulletSizePoints;
+                string autoNumber = textStyle.BulletAutoNumber;
                 string align = null;
-
-                marginLeft = this.GetLeftMargin(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                marginRight = this.GetRightMargin(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-
-                indent = this.GetIndent(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                align = this.GetAlign(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
 
                 if (lastAlign != null && align != null && align != lastAlign)
                 {
@@ -337,80 +636,26 @@ namespace PowerPointConverter.Converter
 
                 if (!isFooter && !isSlideNumber)
                 {
-                    NoBullet noBullet = this.GetNoBullet(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
+                    bool? noBullet = textStyle.BulletNone;
 
-                    if (noBullet == null)
+                    if (noBullet != true && bulletChar != null)
                     {
-                        bulletCharacter = this.GetBulletCharacter(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                        bulletFont = this.GetBulletFont(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                        bulletColor = this.GetBulletColor(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                        bulletSizePercentage = this.GetBulletSizePercentage(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                        autoNumber = this.GetBulletAutoNumber(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-
-                        isBullet = (bulletCharacter != null && bulletCharacter.Char != "•") || bulletColor != null || bulletSizePercentage != null || (bulletFont != null && bulletFont.CharacterSet != "0");
+                        isBullet = true;
 
                         isAutoNumber = autoNumber != null;
                     }
 
-                    if (bulletColor != null)
+                    if (isBullet)
                     {
-                        ColorInfo colorInfo = this.GetColorInfo(bulletColor);
+                        int bulletNumberStartAt = textStyle.BulletAutoNumberStartAt ?? 1;
 
-                        if (colorInfo != null)
+                        if (!dictBulletAutoNumberStartAt.ContainsKey(level))
                         {
-                            bulletColorValue = colorInfo.Color;
-                        }
-                    }
-                    else
-                    {
-                        bulletColorValue = "#000000";
-                    }
-
-                    if (bulletSizePercentage != null && bulletSizePercentage.Val != null)
-                    {
-                        bulletSizePercentageValue = $"{ValueHelper.RoundValueByMultiplicationFactor1000(bulletSizePercentage.Val)}%";
-                    }
-
-                    if (autoNumber != null)
-                    {
-                        string type = autoNumber.Type;
-
-                        switch (type)
-                        {
-                            case "arabicPeriod":
-                                bulletType = "decimal";
-                                break;
-                            case "romanUcPeriod":
-                                bulletType = "upper-roman";
-                                break;
-                            case "romanLcPeriod":
-                                bulletType = "lower-roman";
-                                break;
-                            case "alphaLcParenR":
-                                bulletType = "upper-alpha";
-                                break;
-                            case "alphaLcPeriod":
-                                bulletType = "lower-alpha";
-                                break;
-                            case "circleNumDbPlain":
-                                bulletType = "decimal"; ////todo
-                                break;
-                            case "ea1JpnChsDbPeriod":
-                                bulletType = "decimal"; ////todo
-                                break;
-                        }
-                    }
-                    else if (bulletCharacter != null)
-                    {
-                        var character = bulletCharacter.Char;
-
-                        if (character == "p" || character == "n")
-                        {
-                            bulletType = "square";
+                            dictBulletAutoNumberStartAt.Add(level, bulletNumberStartAt);
                         }
                         else
                         {
-                            bulletType = "disc";
+                            dictBulletAutoNumberStartAt[level] = bulletNumberStartAt;
                         }
                     }
                 }
@@ -420,85 +665,207 @@ namespace PowerPointConverter.Converter
                     ParagraphItemInfo paragraphItemInfo = new ParagraphItemInfo()
                     {
                         IsBullet = isBullet,
-                        IsAutoNumber = isAutoNumber,
-                        BulletColor = bulletColorValue,
-                        BulletType = bulletType,
-                        BulletSizePercentage = bulletSizePercentageValue,
                         LastItemIsLineBreak = lastItemIsLineBreak,
-                        MarginLeft = ValueHelper.RoundValue((marginLeft ?? 0) / ValueHelper.MultiplicationFactor100000),
-                        MarginRight = ValueHelper.RoundValue((marginRight ?? 0) / ValueHelper.MultiplicationFactor100000),
-                        Indent = ValueHelper.RoundValue((indent ?? 0) / ValueHelper.MultiplicationFactor100000),
+                        MarginLeft = textStyle.MarginLeft ?? 0,
+                        MarginRight = textStyle.MarginRight ?? 0,
+                        Indent = textStyle.Indent ?? 0,
                     };
 
                     dictParagraphItemInfo.Add(level, paragraphItemInfo);
                 }
-                #endregion
-
-                #region Font Style                  
-
-                if (portion != null)
-                {
-                    var font = portion.Font;
-                    fontSize = font.Size;
-
-                    string[] excludeKeys = null;
-
-                    if (sbRunText.Length > 0)
-                    {
-                        excludeKeys = ["font-weight", "font-style"];
-                    }
-
-                    this.SetFontStyle(styleBuilder, fontColor, font, excludeKeys);
-                }
-                #endregion
-
-                StyleBuilder paragraphStyleBulider = new StyleBuilder();
+                #endregion                 
 
                 if (!string.IsNullOrEmpty(text?.Trim()))
                 {
-                    #region Margin & Spacing
-                    var layoutProperty = layoutShape?.TextBox?.Paragraphs?.Where(item => item.IndentLevel == level)?.FirstOrDefault();
-                    var spacing = p.Spacing;
-                    var layoutSpacing = layoutProperty?.Spacing;
+                    HtmlNode itemNode = doc.CreateElement("div");
 
-                    var pProperties = useMasterProperty ? properties : this.GetParagraphPropertiesByLevel(level, layoutListStyle);
-
-                    LineSpacing lineSpacing = this.GetLineSpacing(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                    SpaceBefore spaceBefore = this.GetSpaceBefore(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                    SpaceAfter spaceAfter = this.GetSpaceAfter(properties, slideLevelProperties, layoutLevelProperties, masterLevelProperties);
-                    var layoutLineSpacing = layoutSpacing?.LineSpacing;
-                    var layoutSpaceBefore = layoutSpacing?.BeforeSpacing;
-                    var layoutSpaceAfter = layoutSpacing?.AfterSpacing;
-
-                    if (lineSpacing != null)
+                    if (isBullet)
                     {
-                        this.SetSpacingStyle(paragraphStyleBulider, lineSpacing.SpacingPoints, lineSpacing.SpacingPercent, fontSize, "line-height");
+                        var span = doc.CreateElement("span");
+
+                        string bulletContent = bulletChar;
+
+                        if (autoNumber != null)
+                        {
+                            string type = autoNumber;
+
+                            int startAt = dictBulletAutoNumberStartAt[level];
+                            int counter = 0;
+
+                            if (dictBulletAutoNumberCounter.ContainsKey(level))
+                            {
+                                counter = dictBulletAutoNumberCounter[level];
+                            }
+
+                            int currentNumber = startAt + counter;
+
+                            switch (type)
+                            {
+                                case "arabicPeriod":
+                                    bulletContent = $"{currentNumber}.";
+                                    break;
+                                case "arabicParenR":
+                                    bulletContent = $"{currentNumber})";
+                                    break;
+                                case "arabicParenBoth":
+                                    bulletContent = $"{currentNumber})";
+                                    break;
+                                case "arabicPlain":
+                                    bulletContent = $"{currentNumber}";
+                                    break;
+                                case "romanUcPeriod":
+                                    bulletContent = $"{StyleHelper.GetRomanNumber(currentNumber)}.";
+                                    break;
+                                case "romancPeriod":
+                                    bulletContent = $"{StyleHelper.GetRomanNumber(currentNumber).ToLower()}.";
+                                    break;
+                                case "alphaUcPeriod":
+                                    bulletContent = $"{(char)(64 + (((currentNumber - 1) % 26) + 1))}.";
+                                    break;
+                                case "alphaLcPeriod":
+                                    bulletContent = $"{(char)(96 + (((currentNumber - 1) % 26) + 1))}.";
+                                    break;
+                                case "alphaUcParenR":
+                                    bulletContent = $"{(char)(64 + (((currentNumber - 1) % 26) + 1))})";
+                                    break;
+                                case "alphaLcParenR":
+                                    bulletContent = $"{(char)(96 + (((currentNumber - 1) % 26) + 1))})";
+                                    break;
+                                case "circleNumDbPlain":
+                                    bulletContent = currentNumber <= 9 ? $"{(char)(0x2460 + currentNumber - 1)}" : $"{currentNumber}.";
+                                    break;
+                                case "ea1JpnChsDbPeriod":
+                                    bulletContent = $"{StyleHelper.GetChineseNumber(currentNumber)}.";
+                                    break;
+                                default:
+                                    bulletContent = currentNumber.ToString();
+                                    break;
+                            }
+
+                            if (isAutoNumber)
+                            {
+                                if (dictBulletAutoNumberCounter.ContainsKey(level))
+                                {
+                                    dictBulletAutoNumberCounter[level] += 1;
+                                }
+                                else
+                                {
+                                    dictBulletAutoNumberCounter.Add(level, 1);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (bulletChar == "l")
+                            {
+                                bulletContent = $"{(char)0x2B24}";
+                            }
+                            else if (bulletChar == "p")
+                            {
+                                bulletContent = "□";
+                            }
+                            else if (bulletChar == "n")
+                            {
+                                bulletContent = "◼";
+                            }
+                            else if (bulletChar == "u")
+                            {
+                                bulletContent = "◆";
+                            }
+                            else if (bulletChar == "ü")
+                            {
+                                bulletContent = "√";
+                            }
+                            //else if(bulletChar == "Ø")
+                            //{
+                            //    bulletContent = "▶";
+                            //}                            
+                            else
+                            {
+                                bulletContent = "•";
+                            }
+                        }
+
+                        span.InnerHtml = bulletContent;
+
+                        StyleBuilder sbBullet = new StyleBuilder();
+
+                        if (bulletColor != null)
+                        {
+                            sbBullet.AddColor(bulletColor);
+                        }
+
+                        if (bulletSizePercent != null)
+                        {
+                            sbBullet.Add(CssName.fontSize, $"{(bulletSizePercent.Value * 100)}%");
+                        }
+
+                        if (bulletSizePoints != null)
+                        {
+                            sbBullet.Add(CssName.fontSize, $"{(bulletSizePoints.Value)}px");
+                        }
+
+                        if (bulletFontName != null)
+                        {
+                            sbBullet.Add(CssName.fontFamily, bulletFontName);
+                        }
+
+                        var marginLeft = textStyle.MarginLeft;
+                        var textIndent = textStyle.Indent;
+                        var useHangingBulletGutter = marginLeft != null && marginLeft > 0 && textIndent != null && textIndent < 0;
+
+                        if (useHangingBulletGutter)
+                        {
+                            var markerLeft = Math.Max(0, marginLeft.Value + textIndent.Value);
+                            var markerWidth = Math.Max(0, marginLeft.Value - markerLeft);
+
+                            sbParagraph.Add(CssName.textIndent, "0px");
+
+                            if (alignment == "ctr" || alignment == "r")
+                            {
+                                sbBullet.Add(CssName.paddingLeft, "0px");
+
+                                sbBullet.Add("display", "inline-block");
+                                sbBullet.Add("width", $"{markerWidth}px");
+                                sbBullet.Add(CssName.whiteSpace, "pre");
+                            }
+                            else
+                            {
+                                sbParagraph.Add("position", "relative");
+
+                                sbBullet.Add("position", "absolute");
+                                sbBullet.Add("left", $"{markerLeft}px");
+                                sbBullet.Add("top", "0px");
+                                sbBullet.Add("width", $"{markerWidth}px");
+                                sbBullet.Add(CssName.whiteSpace, "pre");
+                            }
+                        }
+
+                        span.AddStyle(sbBullet);
+
+                        itemNode.AppendChild(span);
                     }
 
-                    if (spaceBefore != null)
+                    if (runNodes.Any())
                     {
-                        this.SetSpacingStyle(paragraphStyleBulider, spaceBefore.SpacingPoints, spaceBefore.SpacingPercent, fontSize, "margin-top");
+                        foreach (var n in runNodes)
+                        {
+                            itemNode.AppendChild(n);
+                        }
                     }
-
-                    if (spaceAfter != null)
+                    else
                     {
-                        this.SetSpacingStyle(paragraphStyleBulider, spaceAfter.SpacingPoints, spaceAfter.SpacingPercent, fontSize, "margin-bottom");
-                    }
-                    #endregion
+                        var contentNdode = doc.CreateElement("span");
+                        contentNdode.InnerHtml = text.Trim();
 
-                    if (align != null)
-                    {
-                        paragraphStyleBulider.Add("text-align", align == "r" ? "right" : (align == "ctr" ? "center" : "left"));
+                        itemNode.AppendChild(contentNdode);
                     }
-
-                    HtmlNode itemNode = doc.CreateElement(isBullet ? "li" : "div");
-                    itemNode.InnerHtml = sbRunText.Length > 0 ? sbRunText.ToString() : text.Trim();
 
                     itemNode.SetAttributeValue("level", level.ToString());
 
-                    if (paragraphStyleBulider.Count > 0)
+                    if (sbParagraph.Count > 0)
                     {
-                        itemNode.AddStyle(paragraphStyleBulider);
+                        itemNode.AddStyle(sbParagraph);
                     }
 
                     itemNodes.Add(itemNode);
@@ -508,17 +875,17 @@ namespace PowerPointConverter.Converter
                 }
 
                 i++;
-            }
+            }            
 
             if (isSameAlign)
             {
                 if (textHAlign == TextHorizontalAlignment.Center)
                 {
-                    styleBuilder.Add("justify-content:center");
+                    sbText.Add(CssName.justifyContent, "center");
                 }
                 else if (textHAlign == TextHorizontalAlignment.Right)
                 {
-                    styleBuilder.Add("justify-content:right");
+                    sbText.Add(CssName.justifyContent, "right");
                 }
             }
 
@@ -531,24 +898,6 @@ namespace PowerPointConverter.Converter
                 int level = int.Parse(item.Attributes["level"].Value);
 
                 var info = dictParagraphItemInfo[level];
-
-                string nodeTag = null;
-
-                if (info.IsBullet)
-                {
-                    if (info.IsAutoNumber)
-                    {
-                        nodeTag = "ol";
-                    }
-                    else
-                    {
-                        nodeTag = "ul";
-                    }
-                }
-                else
-                {
-                    nodeTag = "div";
-                }
 
                 HtmlNode previousItem = null;
                 HtmlNode nextItem = null;
@@ -569,59 +918,7 @@ namespace PowerPointConverter.Converter
                 }
                 else
                 {
-                    HtmlNode paragraphLevelNode = doc.CreateElement(nodeTag);
-
-                    string nodeId = $"{nodeTag}_{Guid.NewGuid()}";
-
-                    paragraphLevelNode.SetAttributeValue("id", nodeId);
-
-                    StyleBuilder sbNodeStyle = new StyleBuilder();
-
-                    if (info.IsBullet)
-                    {
-                        sbNodeStyle.Add("margin-top:0px;margin-bottom:0px");
-                    }
-
-                    if (info.MarginLeft != 0)
-                    {
-                        sbNodeStyle.Add($"margin-left:{(info.MarginLeft + info.Indent)}px"); ////todo
-                    }
-
-                    if (info.Indent != 0)
-                    {
-                        sbNodeStyle.Add($"text-indent:{Math.Abs(info.Indent)}px"); ////to do:use Math.Abs??
-                    }
-
-                    StyleBuilder sbStyle = new StyleBuilder();
-
-                    if (info.IsBullet)
-                    {
-                        sbNodeStyle.Add("list-style-type", info.BulletType ?? (info.IsAutoNumber ? "decimal" : "disc"));
-
-                        if (info.BulletColor != null)
-                        {
-                            sbStyle.AddColor(info.BulletColor);
-                        }
-
-                        if (info.BulletSizePercentage != null)
-                        {
-                            sbStyle.Add("font-size", info.BulletSizePercentage);
-                        }
-                    }
-
-                    if (sbStyle.Count > 0)
-                    {
-                        var styleNode = doc.CreateElement("style");
-
-                        styleNode.InnerHtml = $"#{nodeId} li::marker" + " {" + sbStyle.ToString() + "; }";
-
-                        paragraphContainerNode.AppendChild(styleNode);
-                    }
-
-                    if (sbNodeStyle.Count > 0)
-                    {
-                        paragraphLevelNode.AddStyle(sbNodeStyle);
-                    }
+                    HtmlNode paragraphLevelNode = doc.CreateElement("div");
 
                     paragraphLevelNode.AppendChild(item);
 
@@ -644,9 +941,385 @@ namespace PowerPointConverter.Converter
 
             paragraphContainerNode.AppendChild(paragraphNode);
 
-            paragraphContainerNode.AddStyle(styleBuilder);
+            paragraphContainerNode.AddStyle(sbText);
 
-            return paragraphContainerNode;
+            containerNode.AppendChild(paragraphContainerNode);
+
+            return containerNode;
+        }
+
+        private void MergeTextStyle(TextStyle target, A.TextParagraphPropertiesType style)
+        {
+            if (style == null)
+            {
+                return;
+            }
+
+            if (style.Alignment != null)
+            {
+                target.Alignment = style.Alignment;
+            }
+
+            if (style.RightToLeft != null)
+            {
+                target.RightToLeft = style.RightToLeft;
+            }
+
+            if (style.LeftMargin != null)
+            {
+                target.MarginLeft = ValueHelper.GetEmusPointsValue(style.LeftMargin);
+            }
+
+            if (style.Indent != null)
+            {
+                target.Indent = ValueHelper.GetEmusPointsValue(style.Indent);
+            }
+
+            LineSpacing lineSpacing = style.LineSpacing;
+
+            if (lineSpacing != null)
+            {
+                var spacingPercent = lineSpacing.SpacingPercent;
+
+                if (spacingPercent != null)
+                {
+                    target.LineHeight = ValueHelper.RoundValueByMultiplicationFactor100000(spacingPercent.Val).ToString();
+                    target.IsAbsoluteLineHeight = false;
+                }
+
+                var spacingPoints = lineSpacing.SpacingPoints;
+
+                if (spacingPoints != null)
+                {
+                    target.LineHeight = ValueHelper.RoundValueByMultiplicationFactor100(spacingPoints.Val) + "px";
+                    target.IsAbsoluteLineHeight = true;
+                }
+            }
+
+            SpaceBefore spaceBefore = style.SpaceBefore;
+
+            if (spaceBefore != null)
+            {
+                var spaceBeforePercent = spaceBefore.SpacingPercent;
+
+                if (spaceBeforePercent != null)
+                {
+                    target.SpaceBeforePercent = ValueHelper.RoundValueByMultiplicationFactor100000(spaceBeforePercent.Val);
+                    target.SpaceBeforePoints = null;
+                }
+
+                var spaceBeforePoints = spaceBefore.SpacingPoints;
+
+                if (spaceBeforePoints != null)
+                {
+                    target.SpaceBeforePoints = ValueHelper.RoundValueByMultiplicationFactor100(spaceBeforePoints.Val);
+                    target.SpaceBeforePercent = null;
+                }
+            }
+
+            SpaceAfter spaceAfter = style.SpaceAfter;
+
+            if (spaceAfter != null)
+            {
+                var spaceAfterPercent = spaceAfter.SpacingPercent;
+
+                if (spaceAfterPercent != null)
+                {
+                    target.SpaceAfterPercent = ValueHelper.RoundValueByMultiplicationFactor100000(spaceAfterPercent.Val);
+                    target.SpaceAfterPoints = null;
+                }
+
+                var spaceAfterPoints = spaceAfter.SpacingPoints;
+
+                if (spaceAfterPoints != null)
+                {
+                    target.SpaceAfterPoints = ValueHelper.RoundValueByMultiplicationFactor100(spaceAfterPoints.Val);
+                    target.SpaceAfterPercent = null;
+                }
+            }
+
+            var bulletChar = style.GetFirstChild<A.CharacterBullet>();
+
+            if (bulletChar != null)
+            {
+                target.BulletChar = bulletChar.Char;
+                target.BulletNone = false;
+            }
+
+            var bulletFont = style.GetFirstChild<A.BulletFont>();
+
+            if (bulletFont != null)
+            {
+                target.BulletFontName = bulletFont.Typeface;
+            }
+
+            var bulletAutoNumber = style.GetFirstChild<A.AutoNumberedBullet>();
+
+            if (bulletAutoNumber != null)
+            {
+                string type = bulletAutoNumber.Type;
+                target.BulletAutoNumber = type ?? "arabicPeriod";
+                target.BulletNone = false;
+
+                if (type == "arabicPeriod")
+                {
+                    target.BulletAutoNumberStartAt = bulletAutoNumber.StartAt?.Value;
+                }
+            }
+
+            var bulletNone = style.GetFirstChild<A.NoBullet>();
+
+            if (bulletNone != null)
+            {
+                target.BulletNone = true;
+                target.BulletChar = null;
+                target.BulletAutoNumber = null;
+            }
+
+            var bulletSizePercent = style.GetFirstChild<A.BulletSizePercentage>();
+
+            if (bulletSizePercent != null)
+            {
+                target.BulletSizePercent = ValueHelper.RoundValueByMultiplicationFactor100000(bulletSizePercent.Val);
+                target.BulletSizePoints = null;
+            }
+
+            var bulletSizePoints = style.GetFirstChild<A.BulletSizePoints>();
+
+            if (bulletSizePoints != null)
+            {
+                target.BulletSizePoints = ValueHelper.RoundValueByMultiplicationFactor100(bulletSizePoints.Val);
+                target.BulletSizePercent = null;
+            }
+
+            var bulletSizeText = style.GetFirstChild<A.BulletSizeText>();
+
+            if (bulletSizeText != null)
+            {
+                target.BulletSizePercent = null;
+                target.BulletSizePoints = null;
+            }
+
+            var bulletColor = style.GetFirstChild<A.BulletColor>();
+
+            if (bulletColor != null)
+            {
+                target.BulletColor = StyleHelper.GetColorInfo(bulletColor).Color;
+                target.BulletColorFollowsText = false;
+            }
+
+            var bulletColorText = style.GetFirstChild<A.BulletColorText>();
+
+            if (bulletColorText != null)
+            {
+                target.BulletColorFollowsText = true;
+                target.BulletColor = null;
+            }
+        }
+
+        private void MergeDefaultRunTextStyle(TextStyle target, A.TextCharacterPropertiesType properties)
+        {
+            if (properties == null)
+            {
+                return;
+            }
+
+            if (properties.FontSize != null)
+            {
+                target.FontSize = ValueHelper.RoundValueByMultiplicationFactor100(properties.FontSize.Value);
+            }
+
+            if (properties.Bold?.Value == true)
+            {
+                target.IsBold = true;
+            }
+
+            if (properties.Italic?.Value == true)
+            {
+                target.IsItalic = true;
+            }
+
+            if (properties.Underline != null && properties.Underline != "none")
+            {
+                target.IsUnderline = true;
+            }
+
+            if (properties.Strike != null && properties.Strike != "noStrike")
+            {
+                target.IsStrike = true;
+            }
+
+            var highlight = properties.GetFirstChild<A.Highlight>();
+
+            if (highlight != null)
+            {
+                target.HighlightColor = StyleHelper.GetColorInfo(highlight).Color;
+            }
+
+            var underlineFill = properties.GetFirstChild<A.UnderlineFill>();
+
+            if (underlineFill != null)
+            {
+                target.UnderlineColor = StyleHelper.GetColorInfo(underlineFill).Color;
+
+                target.UnderlineFollowsText = false;
+            }
+
+            var underlineFillText = properties.GetFirstChild<A.UnderlineFillText>();
+
+            if (underlineFillText != null)
+            {
+                target.UnderlineFollowsText = true;
+                target.UnderlineColor = null;
+            }
+
+            var solidFill = properties.GetFirstChild<A.SolidFill>();
+
+            if (solidFill != null)
+            {
+                target.Color = StyleHelper.GetColorInfo(solidFill)?.Color;
+
+                target.IsTextNoFill = false;
+            }
+
+            var gradientFill = properties.GetFirstChild<A.GradientFill>();
+
+            if (gradientFill != null)
+            {
+                target.GradientFillCss = StyleHelper.GetGradientFillCss(gradientFill);
+
+                target.Color = null;
+                target.PatternFillCss = null;
+                target.IsTextNoFill = false;
+            }
+
+            var patternFill = properties.GetFirstChild<A.PatternFill>();
+
+            if (patternFill != null)
+            {
+                target.PatternFillCss = StyleHelper.GetPatternFillCss(patternFill);
+
+                target.Color = null;
+                target.GradientFillCss = null;
+                target.IsTextNoFill = false;
+            }
+
+            var latinFont = properties.GetFirstChild<A.LatinFont>();
+            var eaFont = properties.GetFirstChild<A.EastAsianFont>();
+            var csFont = properties.GetFirstChild<A.ComplexScriptFont>();
+
+            foreach (var font in new TextFontType[3] { latinFont, eaFont, csFont })
+            {
+                if (font != null && font.Typeface?.Value != null)
+                {
+                    target.FontFamilyStack ??= new List<string>();
+
+                    target.FontFamilyStack.Add(StyleHelper.GetFontName(font.Typeface.Value, properties));
+                }
+            }
+
+            if (target.FontFamilyStack?.Count > 0)
+            {
+                target.FontFamily = target.FontFamilyStack[0];
+            }
+
+            var link = properties.GetFirstChild<A.HyperlinkOnClick>();
+
+            if (link != null)
+            {
+                target.IsUnderline = true;
+                target.Color = "blue";
+            }
+
+            var spacing = properties.Spacing;
+
+            if (spacing != null)
+            {
+                target.LetterSpacingPoints = ValueHelper.RoundValueByMultiplicationFactor100(spacing.Value);
+            }
+
+            var kern = properties.Kerning;
+
+            if (kern != null)
+            {
+                target.Kern = ValueHelper.RoundValueByMultiplicationFactor100(kern.Value);
+            }
+
+            var capital = properties.Capital;
+
+            if (capital != null)
+            {
+                target.Capital = capital;
+            }
+
+            var baseline = properties.Baseline;
+
+            if (baseline != null)
+            {
+                target.Baseline = baseline.Value;
+            }
+
+            var effectShadow = properties.GetFirstChild<A.EffectList>()?.GetFirstChild<A.OuterShadow>();
+
+            if (effectShadow != null)
+            {
+                string shadow = StyleHelper.GetTextOuterShadow(effectShadow);
+
+                if (shadow != null)
+                {
+                    this.SetTextShadow(target, shadow);
+                }
+            }
+
+            var glow = properties.GetFirstChild<A.Glow>();
+
+            if (glow != null)
+            {
+                string shadow = StyleHelper.GetTextGlowShadow(glow);
+
+                if (shadow != null)
+                {
+                    this.SetTextShadow(target, shadow);
+                }
+            }
+
+            var noFill = properties.GetFirstChild<A.NoFill>();
+
+            if (noFill != null)
+            {
+                target.Color = null;
+                target.GradientFillCss = null;
+                target.PatternFillCss = null;
+                target.IsTextNoFill = true;
+            }
+
+            var outline = properties.GetFirstChild<A.Outline>();
+
+            if (outline != null && outline.GetFirstChild<A.NoFill>() == null)
+            {
+                var width = outline.Width;
+
+                target.OutlineWidth = width != null ? ValueHelper.GetEmusPointsValue(width.Value) : 0.75d;
+
+                var outlineSolidFill = outline.GetFirstChild<A.SolidFill>();
+
+                if (outlineSolidFill != null)
+                {
+                    target.OutlineColor = StyleHelper.GetColorInfo(outlineSolidFill).Color;
+                }
+
+                var outlinGradientFill = outline.GetFirstChild<A.GradientFill>();
+
+                if (outlinGradientFill != null)
+                {
+                    target.OutlineGradientCss = StyleHelper.GetGradientFillCss(outlinGradientFill);
+                }
+            }
+        }
+
+        private void SetTextShadow(TextStyle target, string shadow)
+        {
+            target.TextShadow = target.TextShadow != null ? $"{target.TextShadow}, {shadow}" : shadow;
         }
 
         private A.TextParagraphPropertiesType GetParagraphPropertiesByLevel(int level, A.ListStyle listStyle)
@@ -698,127 +1371,14 @@ namespace PowerPointConverter.Converter
             return null;
         }
 
-        private void SetSpacingStyle(StyleBuilder styleBuilder, SpacingPoints? spacingPoints, SpacingPercent? spacingPercent, decimal? fontSize, string name)
+        private double GetMarginValue(long? value, bool isToBottom)
         {
-            string value = "100%";
-
-            if (spacingPoints != null && spacingPoints.Val.HasValue)
+            if (value == null)
             {
-                value = ValueHelper.RoundValueByMultiplicationFactor100(spacingPoints.Val) + "px";
-            }
-            else if (spacingPercent != null && spacingPercent.Val.HasValue)
-            {
-                var percent = ValueHelper.RoundValueByMultiplicationFactor100000(spacingPercent.Val);
-
-                value = $"{(decimal)percent * (fontSize ?? 0)}px";
+                return isToBottom? StyleHelper.DefaultTopAndBottomMargin: StyleHelper.DefaultLeftAndRightMargin;
             }
 
-            styleBuilder.Add(name, $"{value}");
-        }
-
-        private BooleanValue? GetFontBold(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.Bold ?? slideLevelRunProperties?.Bold ?? layoutLevelRunProperties?.Bold ?? masterLevelRunProperties?.Bold;
-        }
-
-        private Int32? GetFontSize(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.FontSize ?? slideLevelRunProperties?.FontSize ?? layoutLevelRunProperties?.FontSize ?? masterLevelRunProperties?.FontSize;
-        }
-
-        private BooleanValue? GetFontItalic(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.Italic ?? slideLevelRunProperties?.Italic ?? layoutLevelRunProperties?.Italic ?? masterLevelRunProperties?.Italic;
-        }
-
-        private Int32Value? GetLetterSpacing(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.Spacing ?? slideLevelRunProperties?.Spacing ?? layoutLevelRunProperties?.Spacing ?? masterLevelRunProperties?.Spacing;
-        }
-
-        private string GetFontUnderline(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.Underline ?? slideLevelRunProperties?.Underline ?? layoutLevelRunProperties?.Underline ?? masterLevelRunProperties?.Underline;
-        }
-
-        private string GetFontStrike(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.Strike ?? slideLevelRunProperties?.Strike ?? layoutLevelRunProperties?.Strike ?? masterLevelRunProperties?.Strike;
-        }
-
-        private SolidFill GetFontSolidFill(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.GetFirstChild<SolidFill>() ?? slideLevelRunProperties?.GetFirstChild<SolidFill>() ?? layoutLevelRunProperties?.GetFirstChild<SolidFill>() ?? masterLevelRunProperties?.GetFirstChild<SolidFill>();
-        }
-
-        private HyperlinkOnClick GetFontHyperlinkOnClick(A.RunProperties runProperties, A.DefaultRunProperties slideLevelRunProperties, A.DefaultRunProperties layoutLevelRunProperties, A.DefaultRunProperties masterLevelRunProperties)
-        {
-            return runProperties?.GetFirstChild<HyperlinkOnClick>() ?? slideLevelRunProperties?.GetFirstChild<HyperlinkOnClick>() ?? layoutLevelRunProperties?.GetFirstChild<HyperlinkOnClick>() ?? masterLevelRunProperties?.GetFirstChild<HyperlinkOnClick>();
-        }
-
-        private Int32Value? GetLeftMargin(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.LeftMargin ?? slideLevelProperties?.LeftMargin ?? layoutLevelProperties?.LeftMargin ?? masterLevelProperties?.LeftMargin;
-        }
-
-        private Int32Value? GetRightMargin(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.RightMargin ?? slideLevelProperties?.RightMargin ?? layoutLevelProperties?.RightMargin ?? masterLevelProperties?.RightMargin;
-        }
-
-        private Int32Value? GetIndent(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.Indent ?? slideLevelProperties?.Indent ?? layoutLevelProperties?.Indent ?? masterLevelProperties?.Indent;
-        }
-
-        private NoBullet GetNoBullet(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.GetFirstChild<NoBullet>() ?? slideLevelProperties?.GetFirstChild<NoBullet>() ?? layoutLevelProperties?.GetFirstChild<NoBullet>() ?? masterLevelProperties?.GetFirstChild<NoBullet>();
-        }
-
-        private CharacterBullet GetBulletCharacter(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.GetFirstChild<A.CharacterBullet>() ?? slideLevelProperties?.GetFirstChild<CharacterBullet>() ?? layoutLevelProperties?.GetFirstChild<CharacterBullet>() ?? masterLevelProperties?.GetFirstChild<CharacterBullet>();
-        }
-
-        private BulletFont GetBulletFont(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.GetFirstChild<A.BulletFont>() ?? slideLevelProperties?.GetFirstChild<BulletFont>() ?? layoutLevelProperties?.GetFirstChild<BulletFont>() ?? masterLevelProperties?.GetFirstChild<BulletFont>();
-        }
-
-        private BulletColor GetBulletColor(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.GetFirstChild<A.BulletColor>() ?? slideLevelProperties?.GetFirstChild<BulletColor>() ?? layoutLevelProperties?.GetFirstChild<BulletColor>() ?? masterLevelProperties?.GetFirstChild<BulletColor>();
-        }
-
-        private BulletSizePercentage GetBulletSizePercentage(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.GetFirstChild<A.BulletSizePercentage>() ?? slideLevelProperties?.GetFirstChild<BulletSizePercentage>() ?? layoutLevelProperties?.GetFirstChild<BulletSizePercentage>() ?? masterLevelProperties?.GetFirstChild<BulletSizePercentage>();
-        }
-
-        private AutoNumberedBullet GetBulletAutoNumber(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.GetFirstChild<A.AutoNumberedBullet>() ?? slideLevelProperties?.GetFirstChild<AutoNumberedBullet>() ?? layoutLevelProperties?.GetFirstChild<AutoNumberedBullet>() ?? masterLevelProperties?.GetFirstChild<AutoNumberedBullet>();
-        }
-
-        private SpaceBefore? GetSpaceBefore(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.SpaceBefore ?? slideLevelProperties?.GetFirstChild<SpaceBefore>() ?? layoutLevelProperties?.GetFirstChild<SpaceBefore>() ?? masterLevelProperties?.GetFirstChild<SpaceBefore>();
-        }
-
-        private SpaceAfter? GetSpaceAfter(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.SpaceAfter ?? slideLevelProperties?.GetFirstChild<SpaceAfter>() ?? layoutLevelProperties?.GetFirstChild<SpaceAfter>() ?? masterLevelProperties?.GetFirstChild<SpaceAfter>();
-        }
-
-        private LineSpacing? GetLineSpacing(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.LineSpacing ?? slideLevelProperties?.GetFirstChild<LineSpacing>() ?? layoutLevelProperties?.GetFirstChild<LineSpacing>() ?? masterLevelProperties?.GetFirstChild<LineSpacing>();
-        }
-
-        private string? GetAlign(A.TextParagraphPropertiesType properties, A.TextParagraphPropertiesType slideLevelProperties, A.TextParagraphPropertiesType layoutLevelProperties, A.TextParagraphPropertiesType masterLevelProperties)
-        {
-            return properties?.Alignment ?? slideLevelProperties?.Alignment ?? layoutLevelProperties?.Alignment ?? masterLevelProperties?.Alignment;
+            return ValueHelper.GetEmusPointsValue(value.Value);
         }
     }
 }

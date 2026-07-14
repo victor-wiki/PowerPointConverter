@@ -53,6 +53,8 @@ namespace PowerPointViewer
 
         private void tsmiOpenFile_Click(object sender, EventArgs e)
         {
+            this.openFileDialog1.FileName = "";
+
             DialogResult result = this.openFileDialog1.ShowDialog();
 
             if (result == DialogResult.OK)
@@ -64,6 +66,12 @@ namespace PowerPointViewer
                 this.filePath = filePath;
 
                 this.Text = filePath;
+
+                if(this.bgWorker.IsBusy)
+                {
+                    MessageBox.Show("It's processing the selected file, please wait for one moment.");
+                    return;
+                }    
 
                 this.bgWorker.RunWorkerAsync();
             }

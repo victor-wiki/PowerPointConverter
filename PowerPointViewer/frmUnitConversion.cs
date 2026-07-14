@@ -29,8 +29,8 @@ namespace PowerPointViewer
             long integerValue = Convert.ToInt64(value);
 
             var emus = new ShapeCrawler.Units.Emus(integerValue);
-            decimal points = Math.Round(emus.AsPoints(), 2);
-            decimal pixels = Math.Round(emus.AsPixels(), 2);
+            double points = Math.Round(emus.AsPoints(), 2);
+            double pixels = Math.Round(emus.AsPixels(), 2);
 
             this.txtPoints.Text = points.ToString();
             this.txtPixels.Text = pixels.ToString();
@@ -94,7 +94,7 @@ namespace PowerPointViewer
 
             this.txtPixels.Text = pixels.ToString();
 
-            this.txtPoints.Text = ValueHelper.PixelsValueToPointsValue((decimal)pixels).ToString();
+            this.txtPoints.Text = ValueHelper.PixelsValueToPointsValue(pixels).ToString();
         }
 
         private void txtCentimeter_MouseDoubleClick(object sender, MouseEventArgs e)

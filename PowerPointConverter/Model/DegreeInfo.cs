@@ -34,7 +34,7 @@
             }
         }
 
-        public double DoubleValue => (double)IntValue / 60000.0;
+        public double DoubleValue => IntValue / 60000.0;
 
         public DegreeInfo(int value)
         {
@@ -85,12 +85,12 @@
 
         public static DegreeInfo operator *(DegreeInfo a, double b)
         {
-            return new DegreeInfo((int)((double)a.IntValue * b));
+            return new DegreeInfo((int)(a.IntValue * b));
         }
 
         public static DegreeInfo operator *(double a, DegreeInfo b)
         {
-            return new DegreeInfo((int)(a * (double)b.IntValue));
+            return new DegreeInfo((int)(a * b.IntValue));
         }
 
         public static DegreeInfo operator /(DegreeInfo a, double b)
@@ -100,7 +100,7 @@
                 throw new DivideByZeroException();
             }
 
-            return new DegreeInfo((int)((double)a.IntValue / b));
+            return new DegreeInfo((int)(a.IntValue / b));
         }
 
         public static bool operator >(DegreeInfo a, DegreeInfo b)

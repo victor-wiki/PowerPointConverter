@@ -1,6 +1,4 @@
 ﻿using DocumentFormat.OpenXml;
-using DocumentFormat.OpenXml.Math;
-using ImageMagick;
 using PowerPointConverter.Model;
 using System.Text;
 using A = DocumentFormat.OpenXml.Drawing;
@@ -78,7 +76,7 @@ namespace PowerPointConverter.Helper
 
                         var widthRadius = ValueHelper.GetEmusPixelsValue(GetValue(at.WidthRadius.Value));
                         var heightRadius = ValueHelper.GetEmusPixelsValue(GetValue(at.HeightRadius));
-                        var (x, y) = GetEllipseCoordinate((double)widthRadius, (double)heightRadius, rotationAngle);
+                        var (x, y) = GetEllipseCoordinate(widthRadius, heightRadius, rotationAngle);
 
                         sb.Append(key)
                             .Append(ValueHelper.GetEmusPixelsValue(GetValue((at.WidthRadius))).ToString()) //rx
@@ -120,14 +118,14 @@ namespace PowerPointConverter.Helper
             return sb.ToString();
         }
 
-        public static string GetSvgString(string pathData, decimal width, decimal height, string fillColor)
+        public static string GetSvgString(SvgInfo svg)
         {
             return
-$@"<svg viewBox=""0 0 {width} {height}"" xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" overflow=""hidden"">
-<path d=""{pathData}"" stroke-width=""0"" fill=""{fillColor}""/>
+$@"<svg viewBox=""0 0 {svg.Width} {svg.Height}"" xmlns=""http://www.w3.org/2000/svg"" xmlns:xlink=""http://www.w3.org/1999/xlink"" overflow=""hidden"">
+<path d=""{svg.PathD}"" stroke-width=""{svg.StrokeWidth}"" stroke=""{svg.Stroke}"" fill=""{svg.Fill}""/>
 </svg>";
 
-        }
+        }        
 
         private static long GetValue(string value)
         {
@@ -171,6 +169,50 @@ $@"<svg viewBox=""0 0 {width} {height}"" xmlns=""http://www.w3.org/2000/svg"" xm
             y = b + y;
 
             return (x, y);
+        }
+
+        public static double? GetBorderRadiusByPathData(A.PathList pathList)
+        {
+            if (pathList.Count() == 1)
+            {
+                var path = pathList.First();
+                var count =path.Count(item => item is A.CubicBezierCurveTo);
+
+                if (count == 4)
+                {
+                    var points = path.Elements<A.CubicBezierCurveTo>().First().Elements<A.Point>().ToArray();
+
+                    if (points.Length == 3)
+                    {
+                        return GetBorderRadiusByPoints(points[0], points[1], points[2]);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        public static double GetBorderRadiusByPoints(A.Point point1, A.Point point2, A.Point point3)
+        {
+            var p1 = UnitHelper.ConvertToPixelPoint(point1);
+            var p2 = UnitHelper.ConvertToPixelPoint(point2);
+            var p3 = UnitHelper.ConvertToPixelPoint(point3);
+
+            double x1 = p1.X, y1 = p1.Y;
+            double x2 = p2.X, y2 = p2.Y;
+            double x3 = p3.X, y3 = p3.Y;
+
+            double mx1 = (x1 + x2) / 2;
+            double my1 = (y1 + y2) / 2;
+            double mx2 = (x2 + x3) / 2;
+            double my2 = (y2 + y3) / 2;
+
+            double cx = (mx1 + mx2) / 2;
+            double cy = (my1 + my2) / 2;
+
+            double radius = Math.Sqrt(Math.Pow(x1 - cx, 2) + Math.Pow(y1 - cy, 2));
+
+            return Math.Round(radius, 2);
         }
     }
 }
