@@ -67,7 +67,7 @@ namespace PowerPointConverter.Converter
             double leftMargin = this.GetMarginValue(bodyProperties.LeftInset?.Value, false);
             double rightMargin = this.GetMarginValue(bodyProperties.RightInset?.Value, false);
             double topMargin = this.GetMarginValue(bodyProperties.TopInset?.Value, true);
-            double bottomMargin = this.GetMarginValue(bodyProperties.BottomInset?.Value,true);
+            double bottomMargin = this.GetMarginValue(bodyProperties.BottomInset?.Value, true);
 
             HtmlNode containerNode = doc.CreateElement("div");
 
@@ -92,7 +92,7 @@ namespace PowerPointConverter.Converter
             bool isWordWrap = wordWrap != null && wordWrap.Value.Value != "none";
             bool isTitle = shape?.PlaceholderType == PlaceholderType.Title;
             bool isFooter = shape?.PlaceholderType == PlaceholderType.Footer;
-            bool isBody = mps!=null? OpenXmlHelper.IsBody(mps):( lps != null ? OpenXmlHelper.IsBody(lps) : OpenXmlHelper.IsBody(ps));
+            bool isBody = mps != null ? OpenXmlHelper.IsBody(mps) : (lps != null ? OpenXmlHelper.IsBody(lps) : OpenXmlHelper.IsBody(ps));
             bool isSlideNumber = shape?.PlaceholderType == PlaceholderType.SlideNumber;
             var fontRef = (ps is P.Shape) ? (ps.GetFirstChild<P.ShapeStyle>()?.GetFirstChild<A.FontReference>())
                           : ps.GetFirstChild<O.ShapeStyle>()?.GetFirstChild<A.FontReference>();
@@ -599,9 +599,9 @@ namespace PowerPointConverter.Converter
                     {
                         properties = pProperity;
                     }
-                    else if(child is A.EndParagraphRunProperties)
+                    else if (child is A.EndParagraphRunProperties)
                     {
-                        if(lastItemIsLineBreak)
+                        if (lastItemIsLineBreak)
                         {
                             HtmlNode endNode = doc.CreateElement("div");
 
@@ -610,7 +610,7 @@ namespace PowerPointConverter.Converter
                             endNode.AddStyle("overflow:visible");
 
                             runNodes.Add(endNode);
-                        }                       
+                        }
                     }
                 }
                 #endregion
@@ -638,7 +638,7 @@ namespace PowerPointConverter.Converter
                 {
                     bool? noBullet = textStyle.BulletNone;
 
-                    if (noBullet != true && bulletChar != null)
+                    if (noBullet != true && (bulletChar != null || autoNumber != null))
                     {
                         isBullet = true;
 
@@ -875,7 +875,7 @@ namespace PowerPointConverter.Converter
                 }
 
                 i++;
-            }            
+            }
 
             if (isSameAlign)
             {
@@ -1375,7 +1375,7 @@ namespace PowerPointConverter.Converter
         {
             if (value == null)
             {
-                return isToBottom? StyleHelper.DefaultTopAndBottomMargin: StyleHelper.DefaultLeftAndRightMargin;
+                return isToBottom ? StyleHelper.DefaultTopAndBottomMargin : StyleHelper.DefaultLeftAndRightMargin;
             }
 
             return ValueHelper.GetEmusPointsValue(value.Value);
