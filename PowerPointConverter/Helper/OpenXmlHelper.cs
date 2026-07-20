@@ -80,6 +80,6 @@ namespace PowerPointConverter.Helper
             }
 
             return geom;
-        }
+        }      
     }
 }

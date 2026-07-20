@@ -62,7 +62,17 @@ namespace PowerPointViewer
 
             try
             {
-                string transformedColor = ColorHelper.TransformColor(colorHex, luminanceModulationValue, luminanceOffsetValue);
+                string transformedColor = colorHex;
+
+                if (luminanceModulationValue.HasValue && luminanceModulationValue!=1)
+                {
+                    transformedColor = ColorHelper.TransformLumMod(colorHex, (long)luminanceModulationValue);
+                }
+
+                if (luminanceOffsetValue.HasValue && luminanceOffsetValue != 0)
+                {
+                    transformedColor = ColorHelper.TransformLumMod(transformedColor, (long)luminanceOffsetValue);
+                }                
 
                 this.txtResult.Text = transformedColor.ToUpper();                
             }

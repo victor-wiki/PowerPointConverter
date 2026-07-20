@@ -11,6 +11,7 @@ using PowerPointConverter.Model;
 using PowerPointConverter.Shapes;
 using ShapeCrawler;
 using ShapeCrawler.Slides;
+using System.Drawing;
 using A = DocumentFormat.OpenXml.Drawing;
 using D = System.Drawing;
 using O = DocumentFormat.OpenXml.Office.Drawing;
@@ -132,6 +133,10 @@ namespace PowerPointConverter.Converter
                             size2 = placeholderShape2.Size;
                             index2 = placeholderShape2.Index;
                         }
+                        else
+                        {
+                            continue;
+                        }
 
                         if (type == type2 && index == index2)
                         {
@@ -140,7 +145,7 @@ namespace PowerPointConverter.Converter
                         else if (type == type2 && type != null && OpenXmlHelper.UniquePlaceholderTypes.Contains(type) && OpenXmlHelper.UniquePlaceholderTypes.Contains(type2))
                         {
                             return lps;
-                        }                       
+                        }
                         else if (type2 == type)
                         {
                             var count = placeholderShapes.Where(item => OpenXmlHelper.GetPlaceholderType(item) == type).Count();
@@ -557,9 +562,9 @@ namespace PowerPointConverter.Converter
 
                         ColorInfo colorInfo = StyleHelper.GetColorInfo(lineFill);
 
-                        lineColor = colorInfo?.Color;                     
+                        lineColor = colorInfo?.Color;
 
-                        lineWidth = StyleHelper.GetOutlineWidth(shape, outline);                 
+                        lineWidth = StyleHelper.GetOutlineWidth(shape, outline);
                     }
                     else
                     {
@@ -568,7 +573,7 @@ namespace PowerPointConverter.Converter
 
                         if (lineRef != null)
                         {
-                            lineColor = StyleHelper.GetColorInfo(lineRef)?.Color;                           
+                            lineColor = StyleHelper.GetColorInfo(lineRef)?.Color;
                         }
                     }
 
@@ -704,56 +709,12 @@ namespace PowerPointConverter.Converter
 
         private void SetOutlineAsBorderStyle(A.Outline outline, StyleBuilder styleBuilder)
         {
-            if (outline == null)
+            LineStyle style = StyleHelper.GetOutlineStyle(outline);
+
+            if (style != null)
             {
-                return;
+                styleBuilder.Add($"border:1px {style.Type} {style.Color}");
             }
-
-            var noFill = outline.GetFirstChild<A.NoFill>();
-
-            if (noFill != null)
-            {
-                return;
-            }
-
-            string color = null;
-            string type = "solid";
-
-            var fill = outline.GetFirstChild<A.SolidFill>();
-
-            var dash = outline.GetFirstChild<A.PresetDash>();
-
-            ColorInfo colorInfo = StyleHelper.GetColorInfo(fill);
-
-            if (colorInfo != null)
-            {
-                color = colorInfo.Color;
-            }
-            else
-            {
-                return;
-            }
-
-            if (dash != null)
-            {
-                type = this.GetDashLineStyle(dash.Val);
-            }
-
-            styleBuilder.Add($"border:1px {type} {color}");
-        }
-
-        private string GetDashLineStyle(string dash)
-        {
-            if (dash == "sysDot")
-            {
-                return "dotted";
-            }
-            else if (dash == "sysDash" || dash == "dash")
-            {
-                return "dashed";
-            }
-
-            return "solid";
         }
 
         private void ProcessImageParts(P.CommonSlideData commonSlideData, IEnumerable<ImagePart> imageParts, IEnumerable<IdPartPair> idParts, HtmlDocument doc, HtmlNode containerNode, List<int> excludeIds = null)
@@ -1109,7 +1070,17 @@ namespace PowerPointConverter.Converter
                         var luminanceModulationValue = ValueHelper.RoundValueByMultiplicationFactor100(luminanceModulation ?? StyleHelper.DefaultLuminanceModulation);
                         var luminanceOffsetValue = ValueHelper.RoundValueByMultiplicationFactor100(luminanceOffset ?? StyleHelper.DefaultLuminanceOffset);
 
-                        string transformedColor = ColorHelper.TransformColor(color, luminanceModulationValue, luminanceOffsetValue);
+                        string transformedColor = ColorHelper.GetHexColor(color);
+
+                        if (luminanceModulationValue != 1)
+                        {
+                            transformedColor = ColorTranslator.FromHtml(ColorHelper.TransformLumMod(color, (long)luminanceModulation.Value)).ToHex();
+                        }
+
+                        if (luminanceOffsetValue != 0)
+                        {
+                            transformedColor = ColorTranslator.FromHtml(ColorHelper.TransformLumOff(color, (long)luminanceOffset.Value)).ToHex();
+                        }
 
                         if (transformedColor != null)
                         {
@@ -1384,13 +1355,13 @@ namespace PowerPointConverter.Converter
 
                 string pathData = GeometryHelper.ConvertPathListToSvgPathData(pathList);
 
-                SvgInfo info = new SvgInfo() 
-                { 
-                    PathD = pathData, 
-                    Width =ValueHelper.PointsValueToPixelsValue(width) , 
+                SvgInfo info = new SvgInfo()
+                {
+                    PathD = pathData,
+                    Width = ValueHelper.PointsValueToPixelsValue(width),
                     Height = ValueHelper.PointsValueToPixelsValue(height),
                     Stroke = "none", ////to do
-                    StrokeWidth =0,
+                    StrokeWidth = 0,
                     Fill = colorInfo?.Color ?? ColorHelper.GetColor(backgroundColor)?.ToHex()
                 };
 

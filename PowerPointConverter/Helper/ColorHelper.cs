@@ -1,4 +1,5 @@
 ﻿using PowerPointConverter.Extension;
+using PowerPointConverter.Model;
 using System.Drawing;
 using A = DocumentFormat.OpenXml.Drawing;
 using D = System.Drawing;
@@ -114,7 +115,7 @@ namespace PowerPointConverter.Helper
             return $"rgba({color.R},{color.G},{color.B},{(alpha ?? 1)})";
         }
 
-        public static string TransferTint(string hex, long tint)
+        public static string TransformTint(string hex, long tint)
         {
             var rgb = ColorTranslator.FromHtml(hex);
             var t = tint / 100000.0;
@@ -125,7 +126,7 @@ namespace PowerPointConverter.Helper
             return RgbToHex(LinearToSrgb(r * t + 1.0 * (1 - t)), LinearToSrgb(g * t + 1.0 * (1 - t)), LinearToSrgb(b * t + 1.0 * (1 - t)));
         }
 
-        public static string TransferShade(string hex, long shade)
+        public static string TransformShade(string hex, long shade)
         {
             var rgb = ColorTranslator.FromHtml(hex);
             var s = shade / 100000.0;
@@ -133,7 +134,7 @@ namespace PowerPointConverter.Helper
             return RgbToHex(LinearToSrgb(SrgbToLinear(rgb.R) * s), LinearToSrgb(SrgbToLinear(rgb.G) * s), LinearToSrgb(SrgbToLinear(rgb.B) * s));
         }
 
-        public static string TransferSatMod(string hex, long satMod)
+        public static string TransformSatMod(string hex, long satMod)
         {
             var rgb = ColorTranslator.FromHtml(hex);
             var hsl = RgbToHsl(rgb.R, rgb.G, rgb.B);
@@ -143,7 +144,7 @@ namespace PowerPointConverter.Helper
             return RgbToHex(rgb2.r, rgb2.g, rgb2.b);
         }
 
-        public static string TransferSatOff(string hex, long satOff)
+        public static string TransformSatOff(string hex, long satOff)
         {
             var rgb = ColorTranslator.FromHtml(hex);
             var hsl = RgbToHsl(rgb.R, rgb.G, rgb.B);
@@ -153,7 +154,27 @@ namespace PowerPointConverter.Helper
             return RgbToHex(rgb2.r, rgb2.g, rgb2.b);
         }
 
-        public static string TransferHueMod(string hex, long hueMod)
+        public static string TransformLumMod(string hex, long lumMod)
+        {
+            var rgb = ColorTranslator.FromHtml(hex);
+            var hsl = RgbToHsl(rgb.R, rgb.G, rgb.B);
+            var newL = Math.Max(0, Math.Min(1, (hsl.l * (lumMod / 100000.0))));
+            var rgb2 = HslToRgb(hsl.h, hsl.s, newL);
+
+            return RgbToHex(rgb2.r, rgb2.g, rgb2.b);
+        }
+
+        public static string TransformLumOff(string hex, long lumOff)
+        {
+            var rgb = ColorTranslator.FromHtml(hex);
+            var hsl = RgbToHsl(rgb.R, rgb.G, rgb.B);
+            var newL = Math.Max(0, Math.Min(1, hsl.l + lumOff / 100000.0));
+            var rgb2 = HslToRgb(hsl.h, hsl.s, newL);
+
+            return RgbToHex(rgb2.r, rgb2.g, rgb2.b);
+        }
+
+        public static string TransformHueMod(string hex, long hueMod)
         {
             var rgb = ColorTranslator.FromHtml(hex);
             var hsl = RgbToHsl(rgb.R, rgb.G, rgb.B);
@@ -164,7 +185,7 @@ namespace PowerPointConverter.Helper
             return RgbToHex(rgb2.r, rgb2.g, rgb2.b);
         }
 
-        public static string TransferHueOff(string hex, long hueOff)
+        public static string TransformHueOff(string hex, long hueOff)
         {
             var rgb = ColorTranslator.FromHtml(hex);
             var hsl = RgbToHsl(rgb.R, rgb.G, rgb.B);
@@ -173,6 +194,11 @@ namespace PowerPointConverter.Helper
             var rgb2 = HslToRgb(newH, hsl.s, hsl.l);
 
             return RgbToHex(rgb2.r, rgb2.g, rgb2.b);
+        }
+
+        public static double TransformAlpha(double alpha)
+        {
+            return Math.Max(0, Math.Min(1, alpha));
         }
 
         public static string RgbToHex(double r, double g, double b)
@@ -185,6 +211,37 @@ namespace PowerPointConverter.Helper
             List<double> list = new List<double>() { clamp(r), clamp(g), clamp(b) };
 
             return "#" + string.Join("", list.Select(item => Convert.ToString((long)item, 16).PadLeft(2, '0')));
+        }
+
+        public static ColorInfo RgbToHex(string value)
+        {
+            if (!value.StartsWith("rgb") && !value.StartsWith("rgba"))
+            {
+                return new ColorInfo() { Color = value };
+            }
+
+            string cleanValue = value.Replace("rgba", "").Replace("rgb", "").Trim('(', ')');
+
+            var parts = cleanValue.Split(",").Select((part) => part.Trim()).ToArray();
+            if (parts.Length < 3)
+                return new ColorInfo() { Color = value };
+
+            var alpha = parts.Length == 4 && !string.IsNullOrEmpty(parts[3]) ? parts[3] : "1";
+
+            var r = parts[0];
+            var g = parts[1];
+            var b = parts[2];
+
+            string hex = RgbToHex(double.Parse(r), double.Parse(g), double.Parse(b));
+
+            if (alpha != "1")
+            {
+                var colorInfo = new ColorInfo() { Color = hex, Alpha = TransformAlpha(double.Parse(alpha)) };
+
+                return colorInfo;
+            }
+
+            return new ColorInfo() { Color = hex, Alpha = 1 };
         }
 
         public static double SrgbToLinear(double c)
@@ -274,7 +331,7 @@ namespace PowerPointConverter.Helper
             );
         }
 
-        public static string TransformColor(string color, double? luminanceModulation, double? luminanceOffset)
+        public static string TransformColor(string color, double luminanceModulation, double luminanceOffset)
         {
             D.Color? colorValue = GetColor(color);
             
@@ -298,7 +355,7 @@ namespace PowerPointConverter.Helper
 
                 list.ForEach(item =>
                 {
-                    var value = Math.Round(item * (luminanceModulation ?? 1) + 255 * (luminanceOffset ?? 0));
+                    var value = Math.Round(item * (luminanceModulation) + 255 * (luminanceOffset));
 
                     var res = Convert.ToString((int)Math.Max(0, Math.Min(255, value)), 16).PadLeft(2, '0');
 

@@ -252,12 +252,12 @@ namespace PowerPointConverter.Converter
 
                 TextStyle textStyle = new TextStyle();
 
-                this.MergeTextStyle(textStyle, presentationLevelProperties);
-                this.MergeTextStyle(textStyle, masterLevelProperties);
-                this.MergeTextStyle(textStyle, masterPlaceholderLevelProperties);
-                this.MergeTextStyle(textStyle, layoutPlaceholderLevelProperties);
-                this.MergeTextStyle(textStyle, shapeLevelProperties);
-                this.MergeTextStyle(textStyle, p.ParagraphProperties);
+                StyleHelper.MergeTextStyle(textStyle, presentationLevelProperties);
+                StyleHelper.MergeTextStyle(textStyle, masterLevelProperties);
+                StyleHelper.MergeTextStyle(textStyle, masterPlaceholderLevelProperties);
+                StyleHelper.MergeTextStyle(textStyle, layoutPlaceholderLevelProperties);
+                StyleHelper.MergeTextStyle(textStyle, shapeLevelProperties);
+                StyleHelper.MergeTextStyle(textStyle, p.ParagraphProperties);
 
                 var presentationDefaultRunProperties = presentationLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
                 var masterDefaultRunProperties = masterLevelProperties?.GetFirstChild<A.DefaultRunProperties>();
@@ -268,12 +268,12 @@ namespace PowerPointConverter.Converter
 
                 TextStyle runDefaultTextStyle = new TextStyle();
 
-                this.MergeDefaultRunTextStyle(runDefaultTextStyle, presentationDefaultRunProperties);
-                this.MergeDefaultRunTextStyle(runDefaultTextStyle, masterDefaultRunProperties);
-                this.MergeDefaultRunTextStyle(runDefaultTextStyle, masterPlaceholderDefaultRunProperties);
-                this.MergeDefaultRunTextStyle(runDefaultTextStyle, layoutPlaceholderDefaultRunProperties);
-                this.MergeDefaultRunTextStyle(runDefaultTextStyle, shapeLevelDefaultRunProperties);
-                this.MergeDefaultRunTextStyle(runDefaultTextStyle, paragraphDefaultRunProperties);
+                StyleHelper.MergeDefaultRunTextStyle(runDefaultTextStyle, presentationDefaultRunProperties);
+                StyleHelper.MergeDefaultRunTextStyle(runDefaultTextStyle, masterDefaultRunProperties);
+                StyleHelper.MergeDefaultRunTextStyle(runDefaultTextStyle, masterPlaceholderDefaultRunProperties);
+                StyleHelper.MergeDefaultRunTextStyle(runDefaultTextStyle, layoutPlaceholderDefaultRunProperties);
+                StyleHelper.MergeDefaultRunTextStyle(runDefaultTextStyle, shapeLevelDefaultRunProperties);
+                StyleHelper.MergeDefaultRunTextStyle(runDefaultTextStyle, paragraphDefaultRunProperties);
 
                 StyleBuilder sbParagraph = new StyleBuilder();
 
@@ -402,7 +402,7 @@ namespace PowerPointConverter.Converter
 
                         var runStyle = ObjectHelper.CloneObject<TextStyle>(runDefaultTextStyle);
 
-                        this.MergeDefaultRunTextStyle(runStyle, run.RunProperties);
+                        StyleHelper.MergeDefaultRunTextStyle(runStyle, run.RunProperties);
 
                         var runProperties = run.GetFirstChild<A.RunProperties>();
 
@@ -946,381 +946,9 @@ namespace PowerPointConverter.Converter
             containerNode.AppendChild(paragraphContainerNode);
 
             return containerNode;
-        }
+        }       
 
-        private void MergeTextStyle(TextStyle target, A.TextParagraphPropertiesType style)
-        {
-            if (style == null)
-            {
-                return;
-            }
-
-            if (style.Alignment != null)
-            {
-                target.Alignment = style.Alignment;
-            }
-
-            if (style.RightToLeft != null)
-            {
-                target.RightToLeft = style.RightToLeft;
-            }
-
-            if (style.LeftMargin != null)
-            {
-                target.MarginLeft = ValueHelper.GetEmusPointsValue(style.LeftMargin);
-            }
-
-            if (style.Indent != null)
-            {
-                target.Indent = ValueHelper.GetEmusPointsValue(style.Indent);
-            }
-
-            LineSpacing lineSpacing = style.LineSpacing;
-
-            if (lineSpacing != null)
-            {
-                var spacingPercent = lineSpacing.SpacingPercent;
-
-                if (spacingPercent != null)
-                {
-                    target.LineHeight = ValueHelper.RoundValueByMultiplicationFactor100000(spacingPercent.Val).ToString();
-                    target.IsAbsoluteLineHeight = false;
-                }
-
-                var spacingPoints = lineSpacing.SpacingPoints;
-
-                if (spacingPoints != null)
-                {
-                    target.LineHeight = ValueHelper.RoundValueByMultiplicationFactor100(spacingPoints.Val) + "px";
-                    target.IsAbsoluteLineHeight = true;
-                }
-            }
-
-            SpaceBefore spaceBefore = style.SpaceBefore;
-
-            if (spaceBefore != null)
-            {
-                var spaceBeforePercent = spaceBefore.SpacingPercent;
-
-                if (spaceBeforePercent != null)
-                {
-                    target.SpaceBeforePercent = ValueHelper.RoundValueByMultiplicationFactor100000(spaceBeforePercent.Val);
-                    target.SpaceBeforePoints = null;
-                }
-
-                var spaceBeforePoints = spaceBefore.SpacingPoints;
-
-                if (spaceBeforePoints != null)
-                {
-                    target.SpaceBeforePoints = ValueHelper.RoundValueByMultiplicationFactor100(spaceBeforePoints.Val);
-                    target.SpaceBeforePercent = null;
-                }
-            }
-
-            SpaceAfter spaceAfter = style.SpaceAfter;
-
-            if (spaceAfter != null)
-            {
-                var spaceAfterPercent = spaceAfter.SpacingPercent;
-
-                if (spaceAfterPercent != null)
-                {
-                    target.SpaceAfterPercent = ValueHelper.RoundValueByMultiplicationFactor100000(spaceAfterPercent.Val);
-                    target.SpaceAfterPoints = null;
-                }
-
-                var spaceAfterPoints = spaceAfter.SpacingPoints;
-
-                if (spaceAfterPoints != null)
-                {
-                    target.SpaceAfterPoints = ValueHelper.RoundValueByMultiplicationFactor100(spaceAfterPoints.Val);
-                    target.SpaceAfterPercent = null;
-                }
-            }
-
-            var bulletChar = style.GetFirstChild<A.CharacterBullet>();
-
-            if (bulletChar != null)
-            {
-                target.BulletChar = bulletChar.Char;
-                target.BulletNone = false;
-            }
-
-            var bulletFont = style.GetFirstChild<A.BulletFont>();
-
-            if (bulletFont != null)
-            {
-                target.BulletFontName = bulletFont.Typeface;
-            }
-
-            var bulletAutoNumber = style.GetFirstChild<A.AutoNumberedBullet>();
-
-            if (bulletAutoNumber != null)
-            {
-                string type = bulletAutoNumber.Type;
-                target.BulletAutoNumber = type ?? "arabicPeriod";
-                target.BulletNone = false;
-
-                if (type == "arabicPeriod")
-                {
-                    target.BulletAutoNumberStartAt = bulletAutoNumber.StartAt?.Value;
-                }
-            }
-
-            var bulletNone = style.GetFirstChild<A.NoBullet>();
-
-            if (bulletNone != null)
-            {
-                target.BulletNone = true;
-                target.BulletChar = null;
-                target.BulletAutoNumber = null;
-            }
-
-            var bulletSizePercent = style.GetFirstChild<A.BulletSizePercentage>();
-
-            if (bulletSizePercent != null)
-            {
-                target.BulletSizePercent = ValueHelper.RoundValueByMultiplicationFactor100000(bulletSizePercent.Val);
-                target.BulletSizePoints = null;
-            }
-
-            var bulletSizePoints = style.GetFirstChild<A.BulletSizePoints>();
-
-            if (bulletSizePoints != null)
-            {
-                target.BulletSizePoints = ValueHelper.RoundValueByMultiplicationFactor100(bulletSizePoints.Val);
-                target.BulletSizePercent = null;
-            }
-
-            var bulletSizeText = style.GetFirstChild<A.BulletSizeText>();
-
-            if (bulletSizeText != null)
-            {
-                target.BulletSizePercent = null;
-                target.BulletSizePoints = null;
-            }
-
-            var bulletColor = style.GetFirstChild<A.BulletColor>();
-
-            if (bulletColor != null)
-            {
-                target.BulletColor = StyleHelper.GetColorInfo(bulletColor).Color;
-                target.BulletColorFollowsText = false;
-            }
-
-            var bulletColorText = style.GetFirstChild<A.BulletColorText>();
-
-            if (bulletColorText != null)
-            {
-                target.BulletColorFollowsText = true;
-                target.BulletColor = null;
-            }
-        }
-
-        private void MergeDefaultRunTextStyle(TextStyle target, A.TextCharacterPropertiesType properties)
-        {
-            if (properties == null)
-            {
-                return;
-            }
-
-            if (properties.FontSize != null)
-            {
-                target.FontSize = ValueHelper.RoundValueByMultiplicationFactor100(properties.FontSize.Value);
-            }
-
-            if (properties.Bold?.Value == true)
-            {
-                target.IsBold = true;
-            }
-
-            if (properties.Italic?.Value == true)
-            {
-                target.IsItalic = true;
-            }
-
-            if (properties.Underline != null && properties.Underline != "none")
-            {
-                target.IsUnderline = true;
-            }
-
-            if (properties.Strike != null && properties.Strike != "noStrike")
-            {
-                target.IsStrike = true;
-            }
-
-            var highlight = properties.GetFirstChild<A.Highlight>();
-
-            if (highlight != null)
-            {
-                target.HighlightColor = StyleHelper.GetColorInfo(highlight).Color;
-            }
-
-            var underlineFill = properties.GetFirstChild<A.UnderlineFill>();
-
-            if (underlineFill != null)
-            {
-                target.UnderlineColor = StyleHelper.GetColorInfo(underlineFill).Color;
-
-                target.UnderlineFollowsText = false;
-            }
-
-            var underlineFillText = properties.GetFirstChild<A.UnderlineFillText>();
-
-            if (underlineFillText != null)
-            {
-                target.UnderlineFollowsText = true;
-                target.UnderlineColor = null;
-            }
-
-            var solidFill = properties.GetFirstChild<A.SolidFill>();
-
-            if (solidFill != null)
-            {
-                target.Color = StyleHelper.GetColorInfo(solidFill)?.Color;
-
-                target.IsTextNoFill = false;
-            }
-
-            var gradientFill = properties.GetFirstChild<A.GradientFill>();
-
-            if (gradientFill != null)
-            {
-                target.GradientFillCss = StyleHelper.GetGradientFillCss(gradientFill);
-
-                target.Color = null;
-                target.PatternFillCss = null;
-                target.IsTextNoFill = false;
-            }
-
-            var patternFill = properties.GetFirstChild<A.PatternFill>();
-
-            if (patternFill != null)
-            {
-                target.PatternFillCss = StyleHelper.GetPatternFillCss(patternFill);
-
-                target.Color = null;
-                target.GradientFillCss = null;
-                target.IsTextNoFill = false;
-            }
-
-            var latinFont = properties.GetFirstChild<A.LatinFont>();
-            var eaFont = properties.GetFirstChild<A.EastAsianFont>();
-            var csFont = properties.GetFirstChild<A.ComplexScriptFont>();
-
-            foreach (var font in new TextFontType[3] { latinFont, eaFont, csFont })
-            {
-                if (font != null && font.Typeface?.Value != null)
-                {
-                    target.FontFamilyStack ??= new List<string>();
-
-                    target.FontFamilyStack.Add(StyleHelper.GetFontName(font.Typeface.Value, properties));
-                }
-            }
-
-            if (target.FontFamilyStack?.Count > 0)
-            {
-                target.FontFamily = target.FontFamilyStack[0];
-            }
-
-            var link = properties.GetFirstChild<A.HyperlinkOnClick>();
-
-            if (link != null)
-            {
-                target.IsUnderline = true;
-                target.Color = "blue";
-            }
-
-            var spacing = properties.Spacing;
-
-            if (spacing != null)
-            {
-                target.LetterSpacingPoints = ValueHelper.RoundValueByMultiplicationFactor100(spacing.Value);
-            }
-
-            var kern = properties.Kerning;
-
-            if (kern != null)
-            {
-                target.Kern = ValueHelper.RoundValueByMultiplicationFactor100(kern.Value);
-            }
-
-            var capital = properties.Capital;
-
-            if (capital != null)
-            {
-                target.Capital = capital;
-            }
-
-            var baseline = properties.Baseline;
-
-            if (baseline != null)
-            {
-                target.Baseline = baseline.Value;
-            }
-
-            var effectShadow = properties.GetFirstChild<A.EffectList>()?.GetFirstChild<A.OuterShadow>();
-
-            if (effectShadow != null)
-            {
-                string shadow = StyleHelper.GetTextOuterShadow(effectShadow);
-
-                if (shadow != null)
-                {
-                    this.SetTextShadow(target, shadow);
-                }
-            }
-
-            var glow = properties.GetFirstChild<A.Glow>();
-
-            if (glow != null)
-            {
-                string shadow = StyleHelper.GetTextGlowShadow(glow);
-
-                if (shadow != null)
-                {
-                    this.SetTextShadow(target, shadow);
-                }
-            }
-
-            var noFill = properties.GetFirstChild<A.NoFill>();
-
-            if (noFill != null)
-            {
-                target.Color = null;
-                target.GradientFillCss = null;
-                target.PatternFillCss = null;
-                target.IsTextNoFill = true;
-            }
-
-            var outline = properties.GetFirstChild<A.Outline>();
-
-            if (outline != null && outline.GetFirstChild<A.NoFill>() == null)
-            {
-                var width = outline.Width;
-
-                target.OutlineWidth = width != null ? ValueHelper.GetEmusPointsValue(width.Value) : 0.75d;
-
-                var outlineSolidFill = outline.GetFirstChild<A.SolidFill>();
-
-                if (outlineSolidFill != null)
-                {
-                    target.OutlineColor = StyleHelper.GetColorInfo(outlineSolidFill).Color;
-                }
-
-                var outlinGradientFill = outline.GetFirstChild<A.GradientFill>();
-
-                if (outlinGradientFill != null)
-                {
-                    target.OutlineGradientCss = StyleHelper.GetGradientFillCss(outlinGradientFill);
-                }
-            }
-        }
-
-        private void SetTextShadow(TextStyle target, string shadow)
-        {
-            target.TextShadow = target.TextShadow != null ? $"{target.TextShadow}, {shadow}" : shadow;
-        }
+       
 
         private A.TextParagraphPropertiesType GetParagraphPropertiesByLevel(int level, A.ListStyle listStyle)
         {

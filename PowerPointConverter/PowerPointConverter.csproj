@@ -5,17 +5,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageId>victor-wiki.$(AssemblyName)</PackageId>
-    <Version>1.0.6</Version>
+    <Version>1.0.7</Version>
     <Authors>victor-wiki</Authors>
     <Description>Convert PowerPoint to HMTL.</Description>
     <RepositoryUrl>https://github.com/victor-wiki/PowerPointConverter</RepositoryUrl>
-    <PackageReleaseNotes>issue fix for text shape: autonumber bullet.</PackageReleaseNotes>
-    <AssemblyVersion>1.0.6</AssemblyVersion>
-    <FileVersion>1.0.6</FileVersion>
+    <PackageReleaseNotes>add: Chart.</PackageReleaseNotes>
+    <AssemblyVersion>1.0.7</AssemblyVersion>
+    <FileVersion>1.0.7</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+    <PackageReference Include="LiveChartsCore" Version="2.0.5" />
+    <PackageReference Include="LiveChartsCore.SkiaSharpView" Version="2.0.5" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Svg.Skia" Version="5.1.1" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.9" />

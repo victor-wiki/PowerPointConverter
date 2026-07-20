@@ -5,7 +5,7 @@
         public string Color { get; set; }       
         public double? FontSize { get; set; }
         public string FontFamily { get; set; }
-        public List<string> FontFamilyStack { get; set; }
+        public List<string> FontFamilyList { get; set; }
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public bool IsUnderline { get; set; }   

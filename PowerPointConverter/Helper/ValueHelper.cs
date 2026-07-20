@@ -57,5 +57,20 @@ namespace PowerPointConverter.Helper
         {
             return Math.Round(value * 9525 / 12700 , roundNumber);
         }
+
+        public static double? GetNumericValue(string value)
+        {
+            if(string.IsNullOrEmpty(value))
+            {
+                return null;
+            }
+
+            if(double.TryParse(value, out var v))
+            {
+                return v;
+            }
+
+            return null;
+        }
     }
 }

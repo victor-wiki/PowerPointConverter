@@ -64,7 +64,7 @@ namespace PowerPointConverter.Converter
 
             using (this.presentation = this.stream != null ? new ShapeCrawler.Presentation(this.stream, false) : new ShapeCrawler.Presentation(this.filePath, false))
             {
-                StyleHelper.Init(this.presentation);
+                this.theme = StyleHelper.Init(this.presentation);
                 this.masterSlide = this.presentation.MasterSlides.FirstOrDefault();
 
                 double width = this.presentation.SlideWidth;
@@ -227,6 +227,10 @@ namespace PowerPointConverter.Converter
                             else if (shape is ShapeCrawler.MediaContent.MediaShape ms)
                             {
                                 node = this.AddMediaShape(ms, slide, shapeStyleBuilder, doc);
+                            }
+                            else if (shape is ShapeCrawler.Charts.ChartShape chart)
+                            {
+                                node = this.CreateChartNode(chart, layoutShape, slide, layoutSlide, shapeStyleBuilder, doc);
                             }
                             else if (shape is ShapeCrawler.Shapes.DrawingShape d)
                             {
@@ -539,7 +543,7 @@ namespace PowerPointConverter.Converter
 
             node.AddStyle(styleBuilder);
 
-            string dash = this.GetDashLineStyle(dashType);
+            string dash = StyleHelper.GetLineType(dashType);
 
             string strDashAttr = "";
 
